@@ -1,0 +1,6 @@
+{
+  "name": "Barebastian",
+  "description": "Official link hub, creator portfolio, VIP channels, live stream schedules, and exclusive releases for Barebastian.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
