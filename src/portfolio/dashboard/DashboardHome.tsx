@@ -1,12 +1,15 @@
 import { useAuth } from '../auth/AuthContext';
 import { getPlan } from '../config/plans';
 import { ArrowRight, CrownIcon, ImageIcon, LibraryIcon, PlayIcon, PostIcon, WandIcon } from '../icons';
-import { formatDate, PHOTOS, placeholderGradient, POSTS, VIDEOS } from './libraryData';
+import { useContent } from '../content/ContentContext';
+import { formatDate, placeholderGradient } from './libraryData';
+import { VideoThumb } from './MediaViewer';
 import { readProgress } from './progress';
 
 export function DashboardHome() {
-  const { user } = useAuth();
-  if (!user?.subscription) return null;
+  const { user, isAdmin } = useAuth();
+  const { videos: VIDEOS, photos: PHOTOS, posts: POSTS } = useContent();
+  if (!user) return null;
   const sub = user.subscription;
   const progress = readProgress();
   const continueWatching = VIDEOS.filter((v) => (progress[v.id]?.ratio ?? 0) > 0.02 && (progress[v.id]?.ratio ?? 0) < 0.97).slice(0, 3);
@@ -26,11 +29,17 @@ export function DashboardHome() {
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-white">
-              <CrownIcon size={14} /> {getPlan(sub.plan).name}-Abo {sub.status === 'canceled' ? '· gekündigt' : 'aktiv'}
+              <CrownIcon size={14} /> {isAdmin ? 'Admin-Zugang' : sub ? `${getPlan(sub.plan).name}-Abo ${sub.status === 'canceled' ? '· gekündigt' : 'aktiv'}` : 'Abo'}
             </p>
             <h2 className="mt-4 font-oswald text-3xl tracking-wide text-white sm:text-4xl">Willkommen zurück, {user.displayName}!</h2>
             <p className="mt-2 text-blue-100">
-              {sub.status === 'canceled' ? `Dein Zugang endet am ${formatDate(sub.renewsAt)}.` : `Nächste Verlängerung am ${formatDate(sub.renewsAt)}.`}
+              {isAdmin
+                ? 'Du kannst Videos, Fotos und Posts direkt in der Bibliothek verwalten.'
+                : sub?.status === 'canceled'
+                  ? `Dein Zugang endet am ${formatDate(sub.renewsAt)}.`
+                  : sub
+                    ? `Nächste Verlängerung am ${formatDate(sub.renewsAt)}.`
+                    : ''}
             </p>
           </div>
           <a
@@ -71,7 +80,8 @@ export function DashboardHome() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {continueWatching.map((v) => (
               <a key={v.id} href={`#/abo-bereich/bibliothek?tab=videos&play=${v.id}`} className="group overflow-hidden rounded-2xl border border-white/10 bg-slate-900/50">
-                <div className="relative aspect-video" style={{ background: placeholderGradient(v.hue) }}>
+                <div className="relative aspect-video overflow-hidden" style={{ background: placeholderGradient(v.hue) }}>
+                  <VideoThumb video={v} />
                   <span className="absolute inset-0 grid place-items-center opacity-80 transition-opacity group-hover:opacity-100">
                     <span className="grid h-12 w-12 place-items-center rounded-full bg-white/20 text-white backdrop-blur"><PlayIcon size={20} /></span>
                   </span>
@@ -96,7 +106,8 @@ export function DashboardHome() {
           <div className="grid gap-4 sm:grid-cols-2">
             {latest.map((v) => (
               <a key={v.id} href={`#/abo-bereich/bibliothek?tab=videos&play=${v.id}`} className="group overflow-hidden rounded-2xl border border-white/10 bg-slate-900/50 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-400/30">
-                <div className="relative aspect-video" style={{ background: placeholderGradient(v.hue) }}>
+                <div className="relative aspect-video overflow-hidden" style={{ background: placeholderGradient(v.hue) }}>
+                  <VideoThumb video={v} />
                   <span className="absolute bottom-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] text-white">{v.duration}</span>
                   <span className="absolute inset-0 grid place-items-center opacity-0 transition-opacity duration-300 group-hover:opacity-100">
                     <span className="grid h-12 w-12 place-items-center rounded-full bg-white/20 text-white backdrop-blur"><PlayIcon size={20} /></span>
@@ -132,8 +143,8 @@ export function DashboardHome() {
           </a>
 
           <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Neuester Post · {formatDate(POSTS[0].date)}</p>
-            <p className="mt-2 line-clamp-3 text-sm text-slate-300">{POSTS[0].text}</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{POSTS[0] ? `Neuester Post · ${formatDate(POSTS[0].date)}` : 'Posts'}</p>
+            <p className="mt-2 line-clamp-3 text-sm text-slate-300">{POSTS[0]?.text ?? 'Noch keine Posts.'}</p>
             <a href="#/abo-bereich/bibliothek?tab=posts" className="mt-3 inline-block text-sm text-cyan-300 hover:underline">Alle Posts</a>
           </div>
         </section>

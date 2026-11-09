@@ -1,4 +1,8 @@
+import { ADMIN_EMAIL, ADMIN_PASSWORD_SHA256, CREATOR_ID } from '../config/admin';
 import { getPlan, type PlanId } from '../config/plans';
+import { readJSON, writeJSON } from '../lib/localStore';
+import { sha256 } from '../lib/sha256';
+import { createAccount, ensureCreatorProfile, findAccountByEmail, getProfile, type Role } from './userDirectory';
 
 /**
  * ⚠️ DEMO-AUTHENTIFIZIERUNG
@@ -24,6 +28,7 @@ export interface User {
   displayName: string;
   createdAt: string;
   provider: 'password' | 'google' | 'github';
+  role: Role;
   subscription: Subscription | null;
 }
 
@@ -37,100 +42,139 @@ export interface AuthService {
   resumeSubscription(): Promise<User>;
 }
 
+export const isAdmin = (user: User | null) => user?.role === 'admin';
+
 export function hasActiveAccess(user: User | null, now = new Date()): boolean {
-  const sub = user?.subscription;
-  if (!sub) return false;
-  return new Date(sub.renewsAt) > now; // auch nach Kündigung bis Laufzeitende
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const sub = user.subscription;
+  return !!sub && new Date(sub.renewsAt) > now; // auch nach Kündigung bis Laufzeitende
 }
 
-const KEY = 'bb_demo_user';
+const SESSION_KEY = 'bb_session';
+const SUBS_KEY = 'bb_subscriptions';
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function read(): User | null {
+interface Session {
+  userId: string;
+  email: string;
+  provider: User['provider'];
+}
+
+function readSession(): Session | null {
   try {
-    const raw = localStorage.getItem(KEY) ?? sessionStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as User) : null;
+    const raw = sessionStorage.getItem(SESSION_KEY) ?? localStorage.getItem(SESSION_KEY);
+    return raw ? (JSON.parse(raw) as Session) : null;
   } catch {
     return null;
   }
 }
 
-function write(user: User | null, remember = localStorage.getItem(KEY) !== null) {
-  localStorage.removeItem(KEY);
-  sessionStorage.removeItem(KEY);
-  if (user) (remember ? localStorage : sessionStorage).setItem(KEY, JSON.stringify(user));
+function writeSession(session: Session | null, remember = true) {
+  localStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
+  if (session) (remember ? localStorage : sessionStorage).setItem(SESSION_KEY, JSON.stringify(session));
 }
 
-function newUser(email: string, provider: User['provider']): User {
-  const name = email.split('@')[0].replace(/[._-]+/g, ' ');
+const readSubs = () => readJSON<Record<string, Subscription>>(SUBS_KEY, {});
+
+function buildUser(session: Session): User | null {
+  const profile = getProfile(session.userId);
+  if (!profile) return null;
   return {
-    id: `demo-${Math.random().toString(36).slice(2, 10)}`,
-    email,
-    displayName: name.charAt(0).toUpperCase() + name.slice(1),
-    createdAt: new Date().toISOString(),
-    provider,
-    subscription: null,
+    id: profile.id,
+    email: session.email,
+    displayName: profile.displayName,
+    createdAt: profile.joinedAt,
+    provider: session.provider,
+    role: profile.role,
+    subscription: readSubs()[profile.id] ?? null,
   };
 }
 
 function requireUser(): User {
-  const u = read();
+  const s = readSession();
+  const u = s && buildUser(s);
   if (!u) throw new Error('Nicht angemeldet.');
   return u;
 }
 
-export const demoAuthService: AuthService = {
-  current: read,
+function updateSubscription(userId: string, fn: (sub: Subscription | undefined) => Subscription | undefined) {
+  const subs = readSubs();
+  const next = fn(subs[userId]);
+  if (next) subs[userId] = next;
+  else delete subs[userId];
+  writeJSON(SUBS_KEY, subs);
+}
 
-  async login(email, password, remember) {
-    await delay(700);
+export const demoAuthService: AuthService = {
+  current() {
+    const s = readSession();
+    return s ? buildUser(s) : null;
+  },
+
+  async login(rawEmail, password, remember) {
+    await delay(600);
+    const email = rawEmail.trim().toLowerCase();
+    const hash = await sha256(password);
+
+    if (email === ADMIN_EMAIL.toLowerCase()) {
+      if (hash !== ADMIN_PASSWORD_SHA256) throw new Error('E-Mail oder Passwort ist falsch.');
+      ensureCreatorProfile();
+      const session: Session = { userId: CREATOR_ID, email, provider: 'password' };
+      writeSession(session, remember);
+      return buildUser(session)!;
+    }
+
     if (password.length < 6) throw new Error('Das Passwort muss mindestens 6 Zeichen lang sein.');
-    const existing = read();
-    const user = existing && existing.email === email ? existing : newUser(email, 'password');
-    write(user, remember);
-    return user;
+    const account = findAccountByEmail(email);
+    let userId: string;
+    if (account) {
+      if (account.passwordHash && account.passwordHash !== hash) throw new Error('E-Mail oder Passwort ist falsch.');
+      userId = account.id;
+    } else {
+      userId = createAccount(email, hash, 'password').id; // erster Login = Registrierung
+    }
+    const session: Session = { userId, email, provider: 'password' };
+    writeSession(session, remember);
+    return buildUser(session)!;
   },
 
   async loginWithProvider(provider) {
-    await delay(600);
-    const user = newUser(`demo.${provider}@example.com`, provider);
-    write(user, true);
-    return user;
+    await delay(500);
+    const email = `demo.${provider}@example.com`;
+    const account = findAccountByEmail(email);
+    const userId = account?.id ?? createAccount(email, null, provider).id;
+    const session: Session = { userId, email, provider };
+    writeSession(session, true);
+    return buildUser(session)!;
   },
 
   async logout() {
-    write(null);
+    writeSession(null);
   },
 
   async subscribe(planId) {
-    await delay(900);
+    await delay(800);
     const user = requireUser();
     const start = new Date();
     const end = new Date(start);
     end.setMonth(end.getMonth() + getPlan(planId).months);
-    const updated: User = {
-      ...user,
-      subscription: { plan: planId, status: 'active', startedAt: start.toISOString(), renewsAt: end.toISOString() },
-    };
-    write(updated);
-    return updated;
+    updateSubscription(user.id, () => ({ plan: planId, status: 'active', startedAt: start.toISOString(), renewsAt: end.toISOString() }));
+    return requireUser();
   },
 
   async cancelSubscription() {
-    await delay(400);
+    await delay(300);
     const user = requireUser();
-    if (!user.subscription) return user;
-    const updated: User = { ...user, subscription: { ...user.subscription, status: 'canceled' } };
-    write(updated);
-    return updated;
+    updateSubscription(user.id, (s) => (s ? { ...s, status: 'canceled' } : s));
+    return requireUser();
   },
 
   async resumeSubscription() {
-    await delay(400);
+    await delay(300);
     const user = requireUser();
-    if (!user.subscription) return user;
-    const updated: User = { ...user, subscription: { ...user.subscription, status: 'active' } };
-    write(updated);
-    return updated;
+    updateSubscription(user.id, (s) => (s ? { ...s, status: 'active' } : s));
+    return requireUser();
   },
 };

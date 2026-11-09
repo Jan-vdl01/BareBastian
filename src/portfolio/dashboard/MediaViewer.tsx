@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, PlayIcon, XIcon } from '../icons';
+import { useMediaUrl } from '../lib/mediaDb';
 import { formatDate, placeholderGradient, type PhotoItem, type VideoItem } from './libraryData';
 import { readProgress, saveProgress } from './progress';
 
@@ -33,7 +34,10 @@ function Overlay({ onClose, label, children }: { onClose: () => void; label: str
 }
 
 export function VideoPlayerModal({ video, onClose }: { video: VideoItem; onClose: () => void }) {
-  const [failed, setFailed] = useState(!video.src);
+  const { url, loading } = useMediaUrl(video.src);
+  const poster = useMediaUrl(video.poster).url;
+  const [errored, setErrored] = useState(false);
+  const failed = !loading && (!url || errored);
   const ref = useRef<HTMLVideoElement>(null);
 
   const onLoaded = () => {
@@ -44,7 +48,11 @@ export function VideoPlayerModal({ video, onClose }: { video: VideoItem; onClose
   return (
     <Overlay onClose={onClose} label={video.title}>
       <div className="overflow-hidden rounded-2xl bg-black shadow-2xl">
-        {failed ? (
+        {loading ? (
+          <div className="grid aspect-video animate-pulse place-items-center" style={{ background: placeholderGradient(video.hue) }}>
+            <span className="h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+          </div>
+        ) : failed ? (
           <div className="relative grid aspect-video place-items-center text-center" style={{ background: placeholderGradient(video.hue) }}>
             <div className="px-6">
               <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-white/15 text-white backdrop-blur"><PlayIcon size={28} /></span>
@@ -58,8 +66,8 @@ export function VideoPlayerModal({ video, onClose }: { video: VideoItem; onClose
           <video
             ref={ref}
             className="aspect-video w-full bg-black"
-            src={video.src}
-            poster={video.poster}
+            src={url}
+            poster={poster}
             controls
             autoPlay
             playsInline
@@ -67,7 +75,7 @@ export function VideoPlayerModal({ video, onClose }: { video: VideoItem; onClose
             onContextMenu={(e) => e.preventDefault()}
             onLoadedMetadata={onLoaded}
             onTimeUpdate={(e) => saveProgress(video.id, e.currentTarget.currentTime, e.currentTarget.duration)}
-            onError={() => setFailed(true)}
+            onError={() => setErrored(true)}
           />
         )}
       </div>
@@ -81,13 +89,16 @@ export function VideoPlayerModal({ video, onClose }: { video: VideoItem; onClose
 }
 
 export function PhotoTile({ photo, className = '' }: { photo: PhotoItem; className?: string }) {
-  const [failed, setFailed] = useState(!photo.src);
-  return failed ? (
+  const { url, loading } = useMediaUrl(photo.src);
+  const [errored, setErrored] = useState(false);
+  useEffect(() => setErrored(false), [url]);
+  if (loading) return <div className={`animate-pulse ${className}`} style={{ background: placeholderGradient(photo.hue) }} />;
+  return !url || errored ? (
     <div className={`grid place-items-center ${className}`} style={{ background: placeholderGradient(photo.hue) }}>
       <span className="text-xs font-medium text-white/60">{photo.title}</span>
     </div>
   ) : (
-    <img src={photo.src} alt={photo.title} loading="lazy" draggable={false} onError={() => setFailed(true)} className={`object-cover ${className}`} />
+    <img src={url} alt={photo.title} loading="lazy" draggable={false} onError={() => setErrored(true)} className={`object-cover ${className}`} />
   );
 }
 
@@ -118,5 +129,15 @@ export function PhotoLightbox({ photos, index, onIndex, onClose }: { photos: Pho
         <span className="text-white">{photo.title}</span> · {photo.album} · {index + 1} / {photos.length}
       </p>
     </Overlay>
+  );
+}
+
+/** Vorschaubild eines Videos: eigenes Poster oder Farbverlauf-Platzhalter. */
+export function VideoThumb({ video, className = '' }: { video: VideoItem; className?: string }) {
+  const { url } = useMediaUrl(video.poster);
+  return url ? (
+    <img src={url} alt="" draggable={false} className={`absolute inset-0 h-full w-full object-cover ${className}`} />
+  ) : (
+    <div className={`absolute inset-0 ${className}`} style={{ background: placeholderGradient(video.hue) }} />
   );
 }

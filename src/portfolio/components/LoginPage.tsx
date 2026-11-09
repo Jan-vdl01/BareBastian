@@ -221,7 +221,7 @@ export function LoginPage() {
             </a>
           </p>
           <p className="mt-4 rounded-lg border border-amber-300/20 bg-amber-300/5 px-3 py-2 text-center text-xs text-amber-100/80">
-            Demo-Modus: Beliebige E-Mail und ein Passwort mit mind. 6 Zeichen – das Konto wird automatisch angelegt.
+            Demo-Modus: Beim ersten Login mit einer neuen E-Mail wird automatisch ein Konto angelegt. Danach gilt das gewählte Passwort (mind. 6 Zeichen).
           </p>
         </div>
       </section>

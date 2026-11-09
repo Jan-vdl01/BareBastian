@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { AlertIcon, CheckIcon, CopyIcon, DownloadIcon, PlusIcon, TrashIcon } from '../icons';
+import { downloadBlob } from '../lib/download';
 import { checkBio } from './bio/chaturbateRules';
 import {
   COLOR_PRESETS,
@@ -249,12 +250,7 @@ export function BioGeneratorPage() {
   };
 
   const saveFile = (content: string, name: string, type: string) => {
-    const blob = new Blob([content], { type });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    downloadBlob(new Blob([content], { type }), name);
   };
   const fileBase = `chaturbate-bio-${(input.stageName || 'profil').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 

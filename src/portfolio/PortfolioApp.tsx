@@ -14,31 +14,40 @@ import { BioGeneratorPage } from './dashboard/BioGeneratorPage';
 import { DashboardHome } from './dashboard/DashboardHome';
 import { DashboardLayout } from './dashboard/DashboardLayout';
 import { LibraryPage } from './dashboard/LibraryPage';
-import { ProfilePage } from './dashboard/ProfilePage';
+import { AccountPage } from './dashboard/AccountPage';
+import { AdminPage } from './dashboard/admin/AdminPage';
+import { ChatPage } from './dashboard/chat/ChatPage';
+import { ProfilePage } from './dashboard/profile/ProfilePage';
+import { ContentProvider } from './content/ContentContext';
 import { MailIcon, XIcon } from './icons';
 import { PricingPage } from './pages/PricingPage';
 import { SubscribePage } from './pages/SubscribePage';
 import { navigate, useHashRoute, type HashRoute } from './router';
 
-const DASHBOARD_PAGES: Record<string, { title: string; subtitle: string }> = {
+const DASHBOARD_PAGES: Record<string, { title: string; subtitle: string; adminOnly?: boolean }> = {
   '/abo-bereich': { title: 'Abo-Bereich', subtitle: 'Deine Premium-Inhalte & Werkzeuge' },
   '/abo-bereich/bibliothek': { title: 'Bibliothek', subtitle: 'Videos, Fotos & Posts' },
+  '/abo-bereich/chat': { title: 'Nachrichten', subtitle: 'Schreib mit anderen Mitgliedern und mit BAREBASTIAN' },
   '/abo-bereich/bio-designer': { title: 'Chaturbate-Bio-Designer', subtitle: 'Personalisierte HTML-Bio mit Live-Vorschau & Regel-Check' },
-  '/abo-bereich/profil': { title: 'Profil & Abo', subtitle: 'Konto und Mitgliedschaft verwalten' },
+  '/abo-bereich/profil': { title: 'Profil', subtitle: 'Wie dich andere Mitglieder sehen' },
+  '/abo-bereich/konto': { title: 'Konto & Abo', subtitle: 'Konto und Mitgliedschaft verwalten' },
+  '/abo-bereich/verwaltung': { title: 'Verwaltung', subtitle: 'Inhalte veröffentlichen & Mitglieder', adminOnly: true },
 };
 
 /**
  * Zugangsregeln:
- * - /abo-bereich/*  → nur angemeldet UND mit aktivem Abo
+ * - /abo-bereich/*  → nur angemeldet UND mit aktivem Abo (Admin immer)
+ * - /abo-bereich/verwaltung → nur Admin
  * - /login        → wer schon angemeldet ist, wird weitergeleitet
  * - /abo          → öffentlich sichtbar; Abonnenten landen direkt im Abo-Bereich
  * - /preise       → öffentliche Preisseite
  */
-function resolveRedirect({ path, query }: HashRoute, loggedIn: boolean, subscribed: boolean): string | null {
+function resolveRedirect({ path, query }: HashRoute, loggedIn: boolean, subscribed: boolean, admin: boolean): string | null {
   if (path.startsWith('/abo-bereich')) {
     if (!loggedIn) return `/login?next=${encodeURIComponent(path)}`;
     if (!subscribed) return '/abo';
     if (!DASHBOARD_PAGES[path]) return '/abo-bereich';
+    if (DASHBOARD_PAGES[path].adminOnly && !admin) return '/abo-bereich';
   }
   if (path === '/login' && loggedIn) {
     const next = query.get('next');
@@ -51,8 +60,8 @@ function resolveRedirect({ path, query }: HashRoute, loggedIn: boolean, subscrib
 
 function Router() {
   const route = useHashRoute();
-  const { user, isSubscribed } = useAuth();
-  const redirect = resolveRedirect(route, !!user, isSubscribed);
+  const { user, isSubscribed, isAdmin } = useAuth();
+  const redirect = resolveRedirect(route, !!user, isSubscribed, isAdmin);
 
   useEffect(() => {
     if (redirect) navigate(redirect, { replace: true });
@@ -89,7 +98,10 @@ function Router() {
         {route.path === '/abo-bereich' && <DashboardHome />}
         {route.path === '/abo-bereich/bibliothek' && <LibraryPage query={route.query} />}
         {route.path === '/abo-bereich/bio-designer' && <BioGeneratorPage />}
-        {route.path === '/abo-bereich/profil' && <ProfilePage />}
+        {route.path === '/abo-bereich/chat' && <ChatPage query={route.query} />}
+        {route.path === '/abo-bereich/profil' && <ProfilePage query={route.query} />}
+        {route.path === '/abo-bereich/konto' && <AccountPage />}
+        {route.path === '/abo-bereich/verwaltung' && isAdmin && <AdminPage />}
       </DashboardLayout>
     );
   }
@@ -156,7 +168,9 @@ function PublicShell({ children }: { children: (openContact: () => void) => Reac
 export default function PortfolioApp() {
   return (
     <AuthProvider>
-      <Router />
+      <ContentProvider>
+        <Router />
+      </ContentProvider>
     </AuthProvider>
   );
 }

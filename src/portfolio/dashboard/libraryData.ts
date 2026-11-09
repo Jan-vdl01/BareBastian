@@ -20,6 +20,8 @@ export interface VideoItem {
   src?: string;
   poster?: string;
   hue: number; // Farbton der Platzhalter-Grafik
+  /** Dateiendung bei hochgeladenen Dateien (für den Export) */
+  fileExt?: string;
 }
 
 export interface PhotoItem {
@@ -30,6 +32,8 @@ export interface PhotoItem {
   src?: string;
   hue: number;
   tall?: boolean;
+  description?: string;
+  fileExt?: string;
 }
 
 export interface PostItem {

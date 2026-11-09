@@ -1,10 +1,13 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { PlanId } from '../config/plans';
-import { demoAuthService, hasActiveAccess, type AuthService, type User } from './authService';
+import { demoAuthService, hasActiveAccess, isAdmin, type AuthService, type User } from './authService';
+import { useProfile, type Profile } from './userDirectory';
 
 interface AuthContextValue {
   user: User | null;
+  profile: Profile | undefined;
   isSubscribed: boolean;
+  isAdmin: boolean;
   login: (email: string, password: string, remember: boolean) => Promise<User>;
   loginWithProvider: (provider: 'google' | 'github') => Promise<User>;
   logout: () => Promise<void>;
@@ -17,6 +20,18 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children, service = demoAuthService }: { children: ReactNode; service?: AuthService }) {
   const [user, setUser] = useState<User | null>(() => service.current());
+  const profile = useProfile(user?.id);
+
+  // Profil- oder Abo-Änderungen (auch aus anderen Tabs) übernehmen
+  useEffect(() => {
+    const refresh = () => setUser(service.current());
+    window.addEventListener('bb:store', refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener('bb:store', refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, [service]);
 
   const wrap = useCallback(
     <A extends unknown[]>(fn: (...args: A) => Promise<User>) =>
@@ -30,8 +45,10 @@ export function AuthProvider({ children, service = demoAuthService }: { children
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      user,
+      user: user && profile ? { ...user, displayName: profile.displayName } : user,
+      profile,
       isSubscribed: hasActiveAccess(user),
+      isAdmin: isAdmin(user),
       login: wrap(service.login),
       loginWithProvider: wrap(service.loginWithProvider),
       subscribe: wrap(service.subscribe),
@@ -42,7 +59,7 @@ export function AuthProvider({ children, service = demoAuthService }: { children
         setUser(null);
       },
     }),
-    [user, service, wrap],
+    [user, profile, service, wrap],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
