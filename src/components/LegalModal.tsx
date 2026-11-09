@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, FileText, Shield, ArrowLeft } from 'lucide-react';
+import { XIcon as X, FileText, Shield, ArrowLeft } from '../portfolio/icons';
 import { LegalModalType } from '../types';
 
 interface LegalModalProps {
