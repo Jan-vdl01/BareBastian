@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
+import { useHashRoute } from '../router';
 import { NAV_ITEMS, PROFILE } from '../data';
 import { LockIcon } from '../icons';
 
@@ -10,7 +11,9 @@ interface NavbarProps {
 /** Fixierte Navigation mit Glas-Effekt beim Scrollen und CSS-animiertem Burger-Menü. */
 export function Navbar({ onOpenContact }: NavbarProps) {
   const { user, isSubscribed } = useAuth();
-  const account = user ? (isSubscribed ? { href: '#/dashboard', label: 'Dashboard' } : { href: '#/abo', label: 'Abo abschließen' }) : { href: '#/login', label: 'Anmelden' };
+  const account = user ? (isSubscribed ? { href: '#/abo-bereich', label: 'Abo-Bereich' } : { href: '#/abo', label: 'Abo abschließen' }) : { href: '#/login', label: 'Anmelden' };
+  const { path } = useHashRoute();
+  const isActive = (href: string) => href.startsWith('#/') && href.slice(1) === path;
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -60,7 +63,10 @@ export function Navbar({ onOpenContact }: NavbarProps) {
             <a
               key={item.href}
               href={item.href}
-              className="rounded-full px-4 py-2 text-sm text-slate-300 transition-colors duration-200 hover:bg-white/5 hover:text-white"
+              aria-current={isActive(item.href) ? 'page' : undefined}
+              className={`rounded-full px-4 py-2 text-sm transition-colors duration-200 hover:bg-white/5 hover:text-white ${
+                isActive(item.href) ? 'bg-white/10 text-white' : 'text-slate-300'
+              }`}
             >
               {item.label}
             </a>
@@ -116,7 +122,8 @@ export function Navbar({ onOpenContact }: NavbarProps) {
                 <a
                   href={item.href}
                   onClick={() => setOpen(false)}
-                  className="block rounded-xl px-4 py-3 text-base text-slate-200 transition-colors hover:bg-white/5 hover:text-white"
+                  aria-current={isActive(item.href) ? 'page' : undefined}
+                  className={`block rounded-xl px-4 py-3 text-base transition-colors hover:bg-white/5 hover:text-white ${isActive(item.href) ? 'bg-white/10 text-white' : 'text-slate-200'}`}
                 >
                   {item.label}
                 </a>

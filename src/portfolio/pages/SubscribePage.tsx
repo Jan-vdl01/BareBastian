@@ -5,17 +5,18 @@ import { PROFILE } from '../data';
 import { ArrowLeft, CheckIcon, CrownIcon, LockIcon, LogoutIcon } from '../icons';
 import { navigate } from '../router';
 
-/** Paywall: Nur mit aktivem Abo geht es weiter ins Dashboard. */
-export function SubscribePage() {
+/** Paywall: Nur mit aktivem Abo geht es weiter in den Abo-Bereich. */
+export function SubscribePage({ query }: { query: URLSearchParams }) {
   const { user, subscribe, logout } = useAuth();
-  const [selected, setSelected] = useState<PlanId>('quarterly');
+  const requested = query.get('plan');
+  const [selected, setSelected] = useState<PlanId>(PLANS.some((p) => p.id === requested) ? (requested as PlanId) : 'quarterly');
   const [busy, setBusy] = useState(false);
 
   const handleSubscribe = async () => {
     setBusy(true);
     try {
       await subscribe(selected);
-      navigate('/dashboard');
+      navigate('/abo-bereich');
     } finally {
       setBusy(false);
     }
@@ -27,8 +28,8 @@ export function SubscribePage() {
 
       <div className="relative mx-auto max-w-5xl">
         <div className="flex items-center justify-between">
-          <a href="#/" className="group inline-flex items-center gap-2 text-sm text-slate-400 transition-colors hover:text-white">
-            <ArrowLeft size={16} className="transition-transform duration-300 group-hover:-translate-x-1" /> Zur Startseite
+          <a href="#/preise" className="group inline-flex items-center gap-2 text-sm text-slate-400 transition-colors hover:text-white">
+            <ArrowLeft size={16} className="transition-transform duration-300 group-hover:-translate-x-1" /> Zu den Preisen
           </a>
           {user && (
             <button
@@ -50,7 +51,7 @@ export function SubscribePage() {
           </span>
           <h1 className="mt-5 font-oswald text-4xl tracking-wide text-white sm:text-5xl">Werde Teil von {PROFILE.name}</h1>
           <p className="mx-auto mt-4 max-w-xl text-slate-400">
-            {user ? `Hallo ${user.displayName}! ` : ''}Mit einem Abo schaltest du das Dashboard frei: Videobibliothek, Fotos, Posts und den Bio-Generator.
+            {user ? `Hallo ${user.displayName}! ` : ''}Mit einem Abo schaltest du den Abo-Bereich frei: Premium-Videos, Fotos, Posts und den Chaturbate-Bio-Designer.
           </p>
         </div>
 
@@ -115,7 +116,7 @@ export function SubscribePage() {
             </button>
           ) : (
             <a
-              href="#/login?next=/abo"
+              href={`#/login?next=${encodeURIComponent(`/abo?plan=${selected}`)}`}
               className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/30"
             >
               <LockIcon size={16} /> Erst anmelden, dann abonnieren

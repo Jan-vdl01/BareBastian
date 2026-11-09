@@ -8,7 +8,7 @@ const VIDEO_SRC = 'videos/login-bg.mp4';
 
 type Status = 'idle' | 'loading' | 'info';
 
-/* Nach erfolgreichem Login leitet PortfolioApp automatisch weiter (Dashboard bzw. Abo-Seite). */
+/* Nach erfolgreichem Login leitet PortfolioApp automatisch weiter (Abo-Bereich bzw. Abo-Seite). */
 
 /** Video-Spalte mit animiertem Gradient-Fallback, falls (noch) kein Video vorhanden ist. */
 function VideoPanel({ className = '' }: { className?: string }) {
@@ -106,7 +106,7 @@ export function LoginPage() {
           </a>
 
           <h1 className="font-oswald text-4xl tracking-wide text-white">Willkommen zurück</h1>
-          <p className="mt-2 text-slate-400">Melde dich an, um dein Abonnenten-Dashboard zu öffnen.</p>
+          <p className="mt-2 text-slate-400">Melde dich an, um deinen Abo-Bereich zu öffnen.</p>
 
           <div className="mt-8 grid grid-cols-2 gap-3">
             <button

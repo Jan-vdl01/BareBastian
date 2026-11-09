@@ -13,9 +13,9 @@ export function DashboardHome() {
   const latest = VIDEOS.slice(0, 4);
 
   const stats = [
-    { label: 'Videos', value: VIDEOS.length, icon: PlayIcon, href: '#/dashboard/bibliothek?tab=videos', accent: 'from-cyan-400 to-blue-500' },
-    { label: 'Fotos', value: PHOTOS.length, icon: ImageIcon, href: '#/dashboard/bibliothek?tab=fotos', accent: 'from-blue-500 to-indigo-500' },
-    { label: 'Posts', value: POSTS.length, icon: PostIcon, href: '#/dashboard/bibliothek?tab=posts', accent: 'from-indigo-500 to-violet-500' },
+    { label: 'Videos', value: VIDEOS.length, icon: PlayIcon, href: '#/abo-bereich/bibliothek?tab=videos', accent: 'from-cyan-400 to-blue-500' },
+    { label: 'Fotos', value: PHOTOS.length, icon: ImageIcon, href: '#/abo-bereich/bibliothek?tab=fotos', accent: 'from-blue-500 to-indigo-500' },
+    { label: 'Posts', value: POSTS.length, icon: PostIcon, href: '#/abo-bereich/bibliothek?tab=posts', accent: 'from-indigo-500 to-violet-500' },
   ];
 
   return (
@@ -34,7 +34,7 @@ export function DashboardHome() {
             </p>
           </div>
           <a
-            href="#/dashboard/bibliothek"
+            href="#/abo-bereich/bibliothek"
             className="group inline-flex items-center gap-2 self-start rounded-full bg-white px-5 py-3 text-sm font-semibold text-blue-700 shadow-lg transition-all duration-300 hover:-translate-y-0.5 sm:self-auto"
           >
             Zur Bibliothek <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" />
@@ -70,7 +70,7 @@ export function DashboardHome() {
           <h3 className="mb-4 font-oswald text-xl tracking-wide text-white">Weiter ansehen</h3>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {continueWatching.map((v) => (
-              <a key={v.id} href={`#/dashboard/bibliothek?tab=videos&play=${v.id}`} className="group overflow-hidden rounded-2xl border border-white/10 bg-slate-900/50">
+              <a key={v.id} href={`#/abo-bereich/bibliothek?tab=videos&play=${v.id}`} className="group overflow-hidden rounded-2xl border border-white/10 bg-slate-900/50">
                 <div className="relative aspect-video" style={{ background: placeholderGradient(v.hue) }}>
                   <span className="absolute inset-0 grid place-items-center opacity-80 transition-opacity group-hover:opacity-100">
                     <span className="grid h-12 w-12 place-items-center rounded-full bg-white/20 text-white backdrop-blur"><PlayIcon size={20} /></span>
@@ -91,11 +91,11 @@ export function DashboardHome() {
         <section>
           <div className="mb-4 flex items-center justify-between">
             <h3 className="font-oswald text-xl tracking-wide text-white">Neu in der Bibliothek</h3>
-            <a href="#/dashboard/bibliothek" className="text-sm text-cyan-300 hover:underline">Alle ansehen</a>
+            <a href="#/abo-bereich/bibliothek" className="text-sm text-cyan-300 hover:underline">Alle ansehen</a>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {latest.map((v) => (
-              <a key={v.id} href={`#/dashboard/bibliothek?tab=videos&play=${v.id}`} className="group overflow-hidden rounded-2xl border border-white/10 bg-slate-900/50 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-400/30">
+              <a key={v.id} href={`#/abo-bereich/bibliothek?tab=videos&play=${v.id}`} className="group overflow-hidden rounded-2xl border border-white/10 bg-slate-900/50 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-400/30">
                 <div className="relative aspect-video" style={{ background: placeholderGradient(v.hue) }}>
                   <span className="absolute bottom-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] text-white">{v.duration}</span>
                   <span className="absolute inset-0 grid place-items-center opacity-0 transition-opacity duration-300 group-hover:opacity-100">
@@ -114,15 +114,15 @@ export function DashboardHome() {
         {/* Module & Posts */}
         <section className="space-y-4">
           <h3 className="font-oswald text-xl tracking-wide text-white">Werkzeuge</h3>
-          <a href="#/dashboard/bio-generator" className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-gradient-to-br from-violet-600/20 to-fuchsia-600/10 p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-violet-400/40">
+          <a href="#/abo-bereich/bio-designer" className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-gradient-to-br from-violet-600/20 to-fuchsia-600/10 p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-violet-400/40">
             <span className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white"><WandIcon size={20} /></span>
             <div className="flex-1">
-              <p className="font-medium text-white">Chaturbate-Bio-Generator</p>
-              <p className="text-sm text-slate-400">Bio, Tip-Menü & Wunschliste mit Regelcheck</p>
+              <p className="font-medium text-white">Chaturbate-Bio-Designer</p>
+              <p className="text-sm text-slate-400">Eigene HTML-Bio im persönlichen Design</p>
             </div>
             <ArrowRight size={18} className="text-slate-500 transition-all group-hover:translate-x-1 group-hover:text-violet-300" />
           </a>
-          <a href="#/dashboard/bibliothek?tab=fotos" className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-slate-900/50 p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-400/30">
+          <a href="#/abo-bereich/bibliothek?tab=fotos" className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-slate-900/50 p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-400/30">
             <span className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 text-white"><LibraryIcon size={20} /></span>
             <div className="flex-1">
               <p className="font-medium text-white">Fotoalben</p>
@@ -134,7 +134,7 @@ export function DashboardHome() {
           <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Neuester Post · {formatDate(POSTS[0].date)}</p>
             <p className="mt-2 line-clamp-3 text-sm text-slate-300">{POSTS[0].text}</p>
-            <a href="#/dashboard/bibliothek?tab=posts" className="mt-3 inline-block text-sm text-cyan-300 hover:underline">Alle Posts</a>
+            <a href="#/abo-bereich/bibliothek?tab=posts" className="mt-3 inline-block text-sm text-cyan-300 hover:underline">Alle Posts</a>
           </div>
         </section>
       </div>

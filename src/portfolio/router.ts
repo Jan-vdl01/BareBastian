@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 /**
  * Minimales Hash-Routing (funktioniert auch per file:// und auf jedem statischen Server).
- * "#/dashboard/bibliothek?tab=fotos" → path "/dashboard/bibliothek", query { tab: "fotos" }.
+ * "#/abo-bereich/bibliothek?tab=fotos" → path "/abo-bereich/bibliothek", query { tab: "fotos" }.
  * Normale Anker wie "#links" gehören zur Startseite ("/").
  */
 export interface HashRoute {

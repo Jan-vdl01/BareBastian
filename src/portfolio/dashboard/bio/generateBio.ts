@@ -52,6 +52,13 @@ export const PERSONALITY_OPTIONS: { id: string; de: string; en: string }[] = [
   { id: 'romantic', de: 'romantisch', en: 'romantic' },
 ];
 
+export const tagsFromInput = (input: BioInput) =>
+  input.hashtags
+    .map((t) => t.trim().replace(/^#+/, '').replace(/\s+/g, ''))
+    .filter(Boolean)
+    .slice(0, 5)
+    .map((t) => `#${t.toLowerCase()}`);
+
 export const LANGUAGE_OPTIONS = ['Deutsch', 'Englisch', 'Niederländisch', 'Französisch', 'Spanisch', 'Italienisch', 'Polnisch', 'Türkisch'];
 
 const LANGUAGE_EN: Record<string, string> = {
@@ -68,7 +75,7 @@ const LANGUAGE_EN: Record<string, string> = {
 const joinList = (items: string[], and: string) =>
   items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} ${and} ${items[items.length - 1]}`;
 
-const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+export const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 interface Copy {
   greet: Record<BioTone, string>;
@@ -128,7 +135,10 @@ const COPY: Record<'de' | 'en', Copy> = {
 
 const EMOJI = { greet: '👋', intro: '✨', personality: '💬', hobbies: '🎮', schedule: '📅', speaks: '🌍', rules: '📜', outro: '❤️' };
 
-interface Block {
+export type BlockKey = 'greet' | 'intro' | 'personality' | 'hobbies' | 'speaks' | 'schedule' | 'extra' | 'rules' | 'outro';
+
+export interface Block {
+  key: BlockKey;
   kind: 'line' | 'list';
   emoji?: string;
   text?: string;
@@ -136,7 +146,7 @@ interface Block {
   items?: string[];
 }
 
-function buildBlocks(input: BioInput, lang: 'de' | 'en'): Block[] {
+export function buildBlocks(input: BioInput, lang: 'de' | 'en'): Block[] {
   const c = COPY[lang];
   const name = input.stageName.trim() || 'Your Name';
   const traits = input.personality
@@ -145,16 +155,16 @@ function buildBlocks(input: BioInput, lang: 'de' | 'en'): Block[] {
   const langs = input.spokenLanguages.map((l) => (lang === 'en' ? LANGUAGE_EN[l] ?? l : l));
 
   const blocks: Block[] = [
-    { kind: 'line', emoji: EMOJI.greet, text: c.greet[input.tone] },
-    { kind: 'line', emoji: EMOJI.intro, text: c.intro(name, input.age.trim(), input.region.trim()) },
+    { key: 'greet', kind: 'line', emoji: EMOJI.greet, text: c.greet[input.tone] },
+    { key: 'intro', kind: 'line', emoji: EMOJI.intro, text: c.intro(name, input.age.trim(), input.region.trim()) },
   ];
-  if (traits.length) blocks.push({ kind: 'line', emoji: EMOJI.personality, text: c.personality(joinList(traits, c.and)) });
-  if (input.hobbies.trim()) blocks.push({ kind: 'line', emoji: EMOJI.hobbies, text: c.hobbies(input.hobbies.trim()) });
-  if (langs.length) blocks.push({ kind: 'line', emoji: EMOJI.speaks, text: c.speaks(joinList(langs, c.and)) });
-  if (input.schedule.trim()) blocks.push({ kind: 'line', emoji: EMOJI.schedule, text: c.schedule(input.schedule.trim()) });
-  if (input.aboutExtra.trim()) blocks.push({ kind: 'line', text: input.aboutExtra.trim() });
-  if (input.includeRoomRules) blocks.push({ kind: 'list', emoji: EMOJI.rules, title: c.rulesTitle, items: c.rules });
-  blocks.push({ kind: 'line', emoji: EMOJI.outro, text: c.outro[input.tone] });
+  if (traits.length) blocks.push({ key: 'personality', kind: 'line', emoji: EMOJI.personality, text: c.personality(joinList(traits, c.and)) });
+  if (input.hobbies.trim()) blocks.push({ key: 'hobbies', kind: 'line', emoji: EMOJI.hobbies, text: c.hobbies(input.hobbies.trim()) });
+  if (langs.length) blocks.push({ key: 'speaks', kind: 'line', emoji: EMOJI.speaks, text: c.speaks(joinList(langs, c.and)) });
+  if (input.schedule.trim()) blocks.push({ key: 'schedule', kind: 'line', emoji: EMOJI.schedule, text: c.schedule(input.schedule.trim()) });
+  if (input.aboutExtra.trim()) blocks.push({ key: 'extra', kind: 'line', text: input.aboutExtra.trim() });
+  if (input.includeRoomRules) blocks.push({ key: 'rules', kind: 'list', emoji: EMOJI.rules, title: c.rulesTitle, items: c.rules });
+  blocks.push({ key: 'outro', kind: 'line', emoji: EMOJI.outro, text: c.outro[input.tone] });
   return blocks;
 }
 
@@ -200,11 +210,7 @@ export function generateBio(input: BioInput): BioOutput {
     .map((t) => `${input.emojis ? '💎 ' : ''}${t.tokens} tk – ${t.label.trim()}`)
     .join('\n');
 
-  const tags = input.hashtags
-    .map((t) => t.trim().replace(/^#+/, '').replace(/\s+/g, ''))
-    .filter(Boolean)
-    .slice(0, 5)
-    .map((t) => `#${t.toLowerCase()}`);
+  const tags = tagsFromInput(input);
   const roomSubject = [input.goal.trim(), tags.join(' ')].filter(Boolean).join(' ');
 
   const de = input.language !== 'en';

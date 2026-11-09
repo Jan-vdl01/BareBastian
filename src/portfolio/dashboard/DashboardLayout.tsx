@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { PROFILE } from '../data';
-import { ArrowLeft, HomeIcon, LibraryIcon, LogoutIcon, UserIcon, WandIcon, type IconComponent } from '../icons';
+import { ArrowLeft, CrownIcon, HomeIcon, LibraryIcon, LogoutIcon, UserIcon, WandIcon, type IconComponent } from '../icons';
 import { navigate } from '../router';
 
 export interface DashboardNavItem {
@@ -12,10 +12,10 @@ export interface DashboardNavItem {
 }
 
 export const DASHBOARD_NAV: DashboardNavItem[] = [
-  { path: '/dashboard', label: 'Übersicht', short: 'Start', icon: HomeIcon },
-  { path: '/dashboard/bibliothek', label: 'Bibliothek', short: 'Bibliothek', icon: LibraryIcon },
-  { path: '/dashboard/bio-generator', label: 'Chaturbate-Bio', short: 'Bio-Tool', icon: WandIcon },
-  { path: '/dashboard/profil', label: 'Profil & Abo', short: 'Profil', icon: UserIcon },
+  { path: '/abo-bereich', label: 'Übersicht', short: 'Start', icon: HomeIcon },
+  { path: '/abo-bereich/bibliothek', label: 'Bibliothek', short: 'Bibliothek', icon: LibraryIcon },
+  { path: '/abo-bereich/bio-designer', label: 'Bio-Designer', short: 'Bio-Designer', icon: WandIcon },
+  { path: '/abo-bereich/profil', label: 'Profil & Abo', short: 'Profil', icon: UserIcon },
 ];
 
 export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
@@ -58,8 +58,11 @@ export function DashboardLayout({ path, title, subtitle, actions, children }: Da
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 font-oswald text-lg font-bold text-white">B</span>
           <span className="font-oswald text-lg tracking-[0.18em] text-white">{PROFILE.name}</span>
         </a>
+        <p className="mt-1 inline-flex w-fit items-center gap-1.5 self-start rounded-full bg-cyan-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200">
+          <CrownIcon size={12} /> Abo-Bereich · VIP
+        </p>
 
-        <nav className="mt-8 flex-1 space-y-1" aria-label="Dashboard">
+        <nav className="mt-6 flex-1 space-y-1" aria-label="Abo-Bereich">
           {DASHBOARD_NAV.map((item) => {
             const active = path === item.path;
             const Icon = item.icon;
@@ -113,7 +116,7 @@ export function DashboardLayout({ path, title, subtitle, actions, children }: Da
             </div>
             <div className="flex shrink-0 items-center gap-3">
               {actions}
-              <a href="#/dashboard/profil" className="lg:hidden" aria-label="Profil">
+              <a href="#/abo-bereich/profil" className="lg:hidden" aria-label="Profil">
                 <Avatar name={user.displayName} />
               </a>
             </div>
@@ -126,7 +129,7 @@ export function DashboardLayout({ path, title, subtitle, actions, children }: Da
       {/* Mobile Tab-Leiste */}
       <nav
         className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-[#080b12]/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden"
-        aria-label="Dashboard"
+        aria-label="Abo-Bereich"
       >
         <ul className="grid grid-cols-4">
           {DASHBOARD_NAV.map((item) => {

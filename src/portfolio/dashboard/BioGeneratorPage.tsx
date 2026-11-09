@@ -2,6 +2,18 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { AlertIcon, CheckIcon, CopyIcon, DownloadIcon, PlusIcon, TrashIcon } from '../icons';
 import { checkBio } from './bio/chaturbateRules';
 import {
+  COLOR_PRESETS,
+  defaultDesign,
+  FONTS,
+  getTemplate,
+  isSafeImageUrl,
+  renderBioDesign,
+  TEMPLATES,
+  type BioDesign,
+  type DividerId,
+  type FontId,
+} from './bio/designTemplates';
+import {
   generateBio,
   LANGUAGE_OPTIONS,
   PERSONALITY_OPTIONS,
@@ -12,6 +24,21 @@ import {
 } from './bio/generateBio';
 
 const STORAGE_KEY = 'bb_bio_generator';
+const DESIGN_KEY = 'bb_bio_design';
+
+function loadDesign(): BioDesign {
+  try {
+    const raw = localStorage.getItem(DESIGN_KEY);
+    if (!raw) return defaultDesign();
+    const saved = JSON.parse(raw) as Partial<BioDesign>;
+    const base = defaultDesign(saved.template);
+    return { ...base, ...saved, sections: { ...base.sections, ...saved.sections } };
+  } catch {
+    return defaultDesign();
+  }
+}
+
+type OutputTab = 'preview' | 'html' | 'text';
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -162,24 +189,49 @@ function OutputBlock({ title, text, mono = false, extra }: { title: string; text
 export function BioGeneratorPage() {
   const id = useId();
   const [input, setInput] = useState<BioInput>(loadInput);
-  const [htmlMode, setHtmlMode] = useState(false);
+  const [design, setDesign] = useState<BioDesign>(loadDesign);
+  const [outputTab, setOutputTab] = useState<OutputTab>('preview');
+  const [previewDark, setPreviewDark] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
   const [wishDraft, setWishDraft] = useState('');
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(input));
   }, [input]);
+  useEffect(() => {
+    localStorage.setItem(DESIGN_KEY, JSON.stringify(design));
+  }, [design]);
+
+  const setD = <K extends keyof BioDesign>(key: K, value: BioDesign[K]) => setDesign((d) => ({ ...d, [key]: value }));
+  const chooseTemplate = (id: BioDesign['template']) => {
+    const t = getTemplate(id);
+    setDesign((d) => ({ ...d, template: id, accent: t.accent, accent2: t.accent2, font: t.font, radius: t.radius }));
+  };
 
   const set = <K extends keyof BioInput>(key: K, value: BioInput[K]) => setInput((s) => ({ ...s, [key]: value }));
   const toggleIn = (key: 'spokenLanguages' | 'personality', value: string) =>
     set(key, input[key].includes(value) ? input[key].filter((v) => v !== value) : [...input[key], value]);
 
   const output = useMemo(() => generateBio(input), [input]);
+  const designHtml = useMemo(() => renderBioDesign(input, design), [input, design]);
+  const imageError = design.headerImage.trim() && !isSafeImageUrl(design.headerImage) ? 'Nur https-Links zu Bildern sind erlaubt.' : null;
 
   const ageNum = Number(input.age);
   const ageError = !input.age.trim() ? 'Bitte gib dein Alter an.' : !Number.isInteger(ageNum) || ageNum < 18 ? 'Du musst mindestens 18 Jahre alt sein.' : ageNum > 99 ? 'Bitte ein gültiges Alter angeben.' : null;
 
-  const allText = [output.aboutMe, output.tipMenu, output.wishList, output.roomSubject, input.interestedIn, input.bodyType, input.region, input.stageName].join('\n');
+  const allText = [
+    output.aboutMe,
+    output.tipMenu,
+    output.wishList,
+    output.roomSubject,
+    input.interestedIn,
+    input.bodyType,
+    input.region,
+    input.stageName,
+    design.headline,
+    design.tagline,
+    design.headerImage,
+  ].join('\n');
   const results = checkBio(allText);
   const errors = results.filter((r) => r.matches.length && r.rule.severity === 'error').length + (ageError ? 1 : 0);
   const warnings = results.filter((r) => r.matches.length && r.rule.severity === 'warning').length;
@@ -196,6 +248,16 @@ export function BioGeneratorPage() {
     setWishDraft('');
   };
 
+  const saveFile = (content: string, name: string, type: string) => {
+    const blob = new Blob([content], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const fileBase = `chaturbate-bio-${(input.stageName || 'profil').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
   const download = () => {
     const parts = [
       `CHATURBATE-BIO – ${input.stageName}`,
@@ -206,8 +268,8 @@ export function BioGeneratorPage() {
       '== ABOUT ME ==',
       output.aboutMe,
       '',
-      '== ABOUT ME (HTML) ==',
-      output.aboutMeHtml,
+      '== ABOUT ME (HTML-DESIGN) ==',
+      designHtml,
       '',
       '== TIP-MENÜ ==',
       output.tipMenu,
@@ -218,18 +280,142 @@ export function BioGeneratorPage() {
       '== RAUM-TITEL ==',
       output.roomSubject,
     ];
-    const blob = new Blob([parts.join('\n')], { type: 'text/plain;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `chaturbate-bio-${(input.stageName || 'profil').toLowerCase().replace(/\s+/g, '-')}.txt`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    saveFile(parts.join('\n'), `${fileBase}.txt`, 'text/plain;charset=utf-8');
   };
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
       {/* Formular */}
       <div className="space-y-5">
+        <Card title="Design wählen">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {TEMPLATES.map((t) => {
+              const pal = t.palette(t.accent, t.accent2);
+              const active = design.template === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => chooseTemplate(t.id)}
+                  aria-pressed={active}
+                  className={`group overflow-hidden rounded-xl border text-left transition-all duration-300 ${
+                    active ? 'border-cyan-400/70 ring-2 ring-cyan-400/30' : 'border-white/10 hover:-translate-y-0.5 hover:border-white/25'
+                  }`}
+                >
+                  <span className="block h-16 p-2.5" style={{ background: pal.pageBg }}>
+                    <span className="block h-2.5 w-2/3 rounded-full" style={{ background: pal.headline, boxShadow: pal.headlineShadow === 'none' ? undefined : pal.headlineShadow }} />
+                    <span className="mt-2 block h-6 rounded-md" style={{ background: pal.cardBg, border: pal.cardBorder }} />
+                  </span>
+                  <span className="block px-3 py-2">
+                    <span className="block text-xs font-semibold text-white">{t.name}</span>
+                    <span className="block truncate text-[11px] text-slate-500">{t.description}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Überschrift" hint="Leer = Anzeigename" htmlFor={`${id}-headline`}>
+              <input id={`${id}-headline`} className={inputCls} value={design.headline} onChange={(e) => setD('headline', e.target.value)} placeholder={input.stageName || 'Dein Name'} />
+            </Field>
+            <Field label="Slogan" htmlFor={`${id}-tagline`}>
+              <input id={`${id}-tagline`} className={inputCls} value={design.tagline} onChange={(e) => setD('tagline', e.target.value)} placeholder="z. B. Dein Lieblings-Stream am Abend" />
+            </Field>
+          </div>
+          <Field label="Banner-Bild (optional)" hint={imageError ?? 'Direkter https-Link zu einem eigenen Bild.'} htmlFor={`${id}-img`}>
+            <input
+              id={`${id}-img`}
+              className={`${inputCls} ${imageError ? 'border-rose-400/60' : ''}`}
+              value={design.headerImage}
+              onChange={(e) => setD('headerImage', e.target.value)}
+              placeholder="https://…/banner.jpg"
+            />
+          </Field>
+
+          <Field label="Farben">
+            <div className="flex flex-wrap items-center gap-2">
+              {COLOR_PRESETS.map(([c1, c2]) => {
+                const active = design.accent.toLowerCase() === c1 && design.accent2.toLowerCase() === c2;
+                return (
+                  <button
+                    key={c1 + c2}
+                    type="button"
+                    aria-label={`Farbkombination ${c1} und ${c2}`}
+                    aria-pressed={active}
+                    onClick={() => setDesign((d) => ({ ...d, accent: c1, accent2: c2 }))}
+                    className={`h-8 w-8 rounded-full transition-transform hover:scale-110 ${active ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' : ''}`}
+                    style={{ background: `linear-gradient(135deg, ${c1} 50%, ${c2} 50%)` }}
+                  />
+                );
+              })}
+              <span className="mx-1 h-6 w-px bg-white/10" />
+              <label className="flex items-center gap-1.5 text-xs text-slate-400">
+                <input type="color" value={design.accent} onChange={(e) => setD('accent', e.target.value)} className="h-8 w-8 cursor-pointer rounded border-0 bg-transparent" />
+                Akzent 1
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-slate-400">
+                <input type="color" value={design.accent2} onChange={(e) => setD('accent2', e.target.value)} className="h-8 w-8 cursor-pointer rounded border-0 bg-transparent" />
+                Akzent 2
+              </label>
+            </div>
+          </Field>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Schriftart" htmlFor={`${id}-font`}>
+              <select id={`${id}-font`} className={inputCls} value={design.font} onChange={(e) => setD('font', e.target.value as FontId)}>
+                {(Object.keys(FONTS) as FontId[]).map((f) => (
+                  <option key={f} value={f} className="bg-slate-900">
+                    {FONTS[f].label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Trenner" htmlFor={`${id}-div`}>
+              <select id={`${id}-div`} className={inputCls} value={design.divider} onChange={(e) => setD('divider', e.target.value as DividerId)}>
+                <option value="line" className="bg-slate-900">Farbverlauf-Linie</option>
+                <option value="dots" className="bg-slate-900">• • •</option>
+                <option value="hearts" className="bg-slate-900">♥ ♥ ♥</option>
+                <option value="stars" className="bg-slate-900">✦ ✦ ✦</option>
+                <option value="none" className="bg-slate-900">Keiner</option>
+              </select>
+            </Field>
+            <Field label={`Ecken-Rundung: ${design.radius}px`} htmlFor={`${id}-radius`}>
+              <input id={`${id}-radius`} type="range" min={0} max={32} value={design.radius} onChange={(e) => setD('radius', Number(e.target.value))} className="w-full accent-cyan-400" />
+            </Field>
+            <Field label="Ausrichtung">
+              <Segmented<'center' | 'left'>
+                label="Ausrichtung"
+                value={design.align}
+                onChange={(v) => setD('align', v)}
+                options={[
+                  { value: 'center', label: 'Zentriert' },
+                  { value: 'left', label: 'Links' },
+                ]}
+              />
+            </Field>
+          </div>
+
+          <Field label="Abschnitte anzeigen">
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ['about', 'Über mich'],
+                  ['schedule', 'Live-Zeiten'],
+                  ['tipMenu', 'Tip-Menü'],
+                  ['wishList', 'Wunschliste'],
+                  ['rules', 'Raumregeln'],
+                  ['tags', 'Hashtags'],
+                ] as [keyof BioDesign['sections'], string][]
+              ).map(([key, label]) => (
+                <Chip key={key} active={design.sections[key]} onClick={() => setD('sections', { ...design.sections, [key]: !design.sections[key] })}>
+                  {label}
+                </Chip>
+              ))}
+            </div>
+          </Field>
+        </Card>
+
         <Card title="Basisdaten">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Anzeigename" htmlFor={`${id}-name`}>
@@ -398,7 +584,96 @@ export function BioGeneratorPage() {
       </div>
 
       {/* Ergebnis */}
-      <div className="space-y-5 xl:sticky xl:top-24 xl:self-start">
+      <div className="space-y-5">
+        <section className="space-y-3 rounded-2xl border border-white/10 bg-slate-900/50 p-5 backdrop-blur-xl">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-oswald text-lg tracking-wide text-white">Deine Bio</h2>
+            <button
+              type="button"
+              onClick={download}
+              disabled={errors > 0}
+              title={errors > 0 ? 'Erst alle Verstöße beheben' : undefined}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-600/30 transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <DownloadIcon size={14} /> Alles als .txt
+            </button>
+          </div>
+
+          {output.fields.length > 0 && (
+            <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Profilfelder</p>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+                {output.fields.map((f) => (
+                  <div key={f.label} className="contents">
+                    <dt className="text-slate-500">{f.label}</dt>
+                    <dd className="text-slate-200">{f.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
+
+          <div className="overflow-hidden rounded-xl border border-white/10 bg-black/30">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 px-3 py-2">
+              <div role="tablist" aria-label="About Me" className="flex gap-1">
+                {(
+                  [
+                    ['preview', 'Vorschau'],
+                    ['html', 'HTML-Code'],
+                    ['text', 'Nur Text'],
+                  ] as [OutputTab, string][]
+                ).map(([tabId, label]) => (
+                  <button
+                    key={tabId}
+                    type="button"
+                    role="tab"
+                    aria-selected={outputTab === tabId}
+                    onClick={() => setOutputTab(tabId)}
+                    className={`rounded-lg px-2.5 py-1.5 text-xs transition-colors ${outputTab === tabId ? 'bg-white/10 font-semibold text-white' : 'text-slate-400 hover:text-white'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                {outputTab === 'preview' && (
+                  <button type="button" onClick={() => setPreviewDark((v) => !v)} className="rounded-lg px-2 py-1 text-[11px] text-cyan-300 hover:bg-cyan-400/10">
+                    Seite: {previewDark ? 'Dunkel' : 'Hell'}
+                  </button>
+                )}
+                <CopyButton text={outputTab === 'text' ? output.aboutMe : designHtml} label={outputTab === 'text' ? 'Text kopieren' : 'HTML kopieren'} />
+              </div>
+            </div>
+            {outputTab === 'preview' && (
+              <iframe
+                title="Vorschau der Bio"
+                sandbox=""
+                className="block h-[560px] w-full"
+                srcDoc={`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:16px;background:${previewDark ? '#1b1b1f' : '#f2f2f2'};">${designHtml}</body></html>`}
+              />
+            )}
+            {outputTab === 'html' && (
+              <pre className="max-h-[560px] overflow-auto whitespace-pre-wrap break-all px-4 py-3 font-mono text-[11px] leading-relaxed text-slate-300">{designHtml}</pre>
+            )}
+            {outputTab === 'text' && (
+              <pre className="max-h-[560px] overflow-auto whitespace-pre-wrap break-words px-4 py-3 font-sans text-sm leading-relaxed text-slate-200">{output.aboutMe}</pre>
+            )}
+            <div className="flex items-center justify-between gap-2 border-t border-white/5 px-4 py-2 text-[11px] text-slate-500">
+              <span>{designHtml.length.toLocaleString('de-DE')} Zeichen · nur Inline-Styles, kein JavaScript</span>
+              <button
+                type="button"
+                disabled={errors > 0}
+                onClick={() => saveFile(`<!doctype html>\n<meta charset="utf-8">\n<title>${input.stageName} – Bio</title>\n${designHtml}\n`, `${fileBase}.html`, 'text/html;charset=utf-8')}
+                className="inline-flex items-center gap-1 text-cyan-300 hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <DownloadIcon size={12} /> .html
+              </button>
+            </div>
+          </div>
+          <OutputBlock title="Tip-Menü" text={output.tipMenu} />
+          <OutputBlock title="Wish List" text={output.wishList} />
+          <OutputBlock title="Raum-Titel" text={output.roomSubject} />
+        </section>
         <section className="rounded-2xl border border-white/10 bg-slate-900/50 p-5 backdrop-blur-xl">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-oswald text-lg tracking-wide text-white">Regel-Check</h2>
@@ -417,52 +692,10 @@ export function BioGeneratorPage() {
             ))}
           </ul>
           <p className="mt-4 text-[11px] leading-relaxed text-slate-500">
-            Die Prüfung basiert auf bekannten Chaturbate-Regeln und ersetzt nicht die offiziellen Richtlinien. Bitte vor dem Veröffentlichen die aktuellen Chaturbate-Terms prüfen.
+            Die Prüfung basiert auf bekannten Chaturbate-Regeln und ersetzt nicht die offiziellen Richtlinien. Bitte vor dem Veröffentlichen die aktuellen Chaturbate-Terms prüfen und das HTML in der Chaturbate-Vorschau kontrollieren.
           </p>
         </section>
 
-        <section className="space-y-3 rounded-2xl border border-white/10 bg-slate-900/50 p-5 backdrop-blur-xl">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="font-oswald text-lg tracking-wide text-white">Deine Bio</h2>
-            <button
-              type="button"
-              onClick={download}
-              disabled={errors > 0}
-              title={errors > 0 ? 'Erst alle Verstöße beheben' : undefined}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-600/30 transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <DownloadIcon size={14} /> Als .txt speichern
-            </button>
-          </div>
-
-          {output.fields.length > 0 && (
-            <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Profilfelder</p>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-                {output.fields.map((f) => (
-                  <div key={f.label} className="contents">
-                    <dt className="text-slate-500">{f.label}</dt>
-                    <dd className="text-slate-200">{f.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          )}
-
-          <OutputBlock
-            title="About Me"
-            text={htmlMode ? output.aboutMeHtml : output.aboutMe}
-            mono={htmlMode}
-            extra={
-              <button type="button" onClick={() => setHtmlMode((m) => !m)} className="rounded-lg px-2 py-1 text-[11px] text-cyan-300 hover:bg-cyan-400/10">
-                {htmlMode ? 'Als Text' : 'Als HTML'}
-              </button>
-            }
-          />
-          <OutputBlock title="Tip-Menü" text={output.tipMenu} />
-          <OutputBlock title="Wish List" text={output.wishList} />
-          <OutputBlock title="Raum-Titel" text={output.roomSubject} />
-        </section>
       </div>
     </div>
   );

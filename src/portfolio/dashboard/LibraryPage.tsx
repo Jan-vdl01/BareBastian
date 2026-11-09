@@ -26,7 +26,7 @@ export function LibraryPage({ query }: LibraryPageProps) {
     const next = new URLSearchParams(query);
     Object.entries(params).forEach(([k, v]) => (v === null ? next.delete(k) : next.set(k, v)));
     const qs = next.toString();
-    navigate(`/dashboard/bibliothek${qs ? `?${qs}` : ''}`);
+    navigate(`/abo-bereich/bibliothek${qs ? `?${qs}` : ''}`);
   };
 
   return (

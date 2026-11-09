@@ -23,7 +23,7 @@ export const PLANS: Plan[] = [
 export const PLAN_FEATURES = [
   'Komplette Videobibliothek in HD streamen',
   'Alle Fotoalben & exklusive Posts',
-  'Chaturbate-Bio-Generator',
+  'Chaturbate-Bio-Designer mit eigenen HTML-Designs',
   'Jederzeit kündbar',
 ];
 

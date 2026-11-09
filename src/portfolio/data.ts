@@ -23,6 +23,7 @@ export const PROFILE = {
 
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Links', href: '#links' },
+  { label: 'Preise', href: '#/preise' },
   { label: 'FAQ', href: '#faq' },
   { label: 'Verbinden', href: '#footer' },
 ];

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { LegalModal } from '../components/LegalModal';
 import type { LegalModalType } from '../types';
 import { AuthProvider, useAuth } from './auth/AuthContext';
@@ -6,6 +6,8 @@ import { FaqAccordion } from './components/FaqAccordion';
 import { InfoDrawer } from './components/InfoDrawer';
 import { LearnlyHero } from './components/LearnlyHero';
 import { LoginPage } from './components/LoginPage';
+import { Navbar } from './components/Navbar';
+import { PricingTeaser } from './components/PricingTeaser';
 import { ParticleBackground } from './components/ParticleBackground';
 import { SplitFooter } from './components/SplitFooter';
 import { BioGeneratorPage } from './dashboard/BioGeneratorPage';
@@ -14,34 +16,36 @@ import { DashboardLayout } from './dashboard/DashboardLayout';
 import { LibraryPage } from './dashboard/LibraryPage';
 import { ProfilePage } from './dashboard/ProfilePage';
 import { MailIcon, XIcon } from './icons';
+import { PricingPage } from './pages/PricingPage';
 import { SubscribePage } from './pages/SubscribePage';
 import { navigate, useHashRoute, type HashRoute } from './router';
 
 const DASHBOARD_PAGES: Record<string, { title: string; subtitle: string }> = {
-  '/dashboard': { title: 'Übersicht', subtitle: 'Dein Abonnenten-Bereich' },
-  '/dashboard/bibliothek': { title: 'Bibliothek', subtitle: 'Videos, Fotos & Posts' },
-  '/dashboard/bio-generator': { title: 'Chaturbate-Bio-Generator', subtitle: 'Bio, Tip-Menü & Wunschliste mit Regel-Check' },
-  '/dashboard/profil': { title: 'Profil & Abo', subtitle: 'Konto und Mitgliedschaft verwalten' },
+  '/abo-bereich': { title: 'Abo-Bereich', subtitle: 'Deine Premium-Inhalte & Werkzeuge' },
+  '/abo-bereich/bibliothek': { title: 'Bibliothek', subtitle: 'Videos, Fotos & Posts' },
+  '/abo-bereich/bio-designer': { title: 'Chaturbate-Bio-Designer', subtitle: 'Personalisierte HTML-Bio mit Live-Vorschau & Regel-Check' },
+  '/abo-bereich/profil': { title: 'Profil & Abo', subtitle: 'Konto und Mitgliedschaft verwalten' },
 };
 
 /**
  * Zugangsregeln:
- * - /dashboard/*  → nur angemeldet UND mit aktivem Abo
+ * - /abo-bereich/*  → nur angemeldet UND mit aktivem Abo
  * - /login        → wer schon angemeldet ist, wird weitergeleitet
- * - /abo          → öffentlich sichtbar; Abonnenten landen direkt im Dashboard
+ * - /abo          → öffentlich sichtbar; Abonnenten landen direkt im Abo-Bereich
+ * - /preise       → öffentliche Preisseite
  */
 function resolveRedirect({ path, query }: HashRoute, loggedIn: boolean, subscribed: boolean): string | null {
-  if (path.startsWith('/dashboard')) {
+  if (path.startsWith('/abo-bereich')) {
     if (!loggedIn) return `/login?next=${encodeURIComponent(path)}`;
     if (!subscribed) return '/abo';
-    if (!DASHBOARD_PAGES[path]) return '/dashboard';
+    if (!DASHBOARD_PAGES[path]) return '/abo-bereich';
   }
   if (path === '/login' && loggedIn) {
     const next = query.get('next');
-    const target = next && next.startsWith('/') ? next : '/dashboard';
-    return target.startsWith('/dashboard') && !subscribed ? '/abo' : target;
+    const target = next && next.startsWith('/') ? next : '/abo-bereich';
+    return target.startsWith('/abo-bereich') && !subscribed ? '/abo' : target;
   }
-  if (path === '/abo' && subscribed) return '/dashboard';
+  if (path === '/abo' && subscribed) return '/abo-bereich';
   return null;
 }
 
@@ -62,24 +66,49 @@ function Router() {
   if (redirect) return null;
 
   if (route.path === '/login') return <LoginPage />;
-  if (route.path === '/abo') return <SubscribePage />;
+  if (route.path === '/abo') return <SubscribePage query={route.query} />;
+  if (route.path === '/preise') {
+    return (
+      <PublicShell>
+        {(openContact) => (
+          <>
+            <Navbar onOpenContact={openContact} />
+            <main>
+              <PricingPage />
+            </main>
+          </>
+        )}
+      </PublicShell>
+    );
+  }
 
   const page = DASHBOARD_PAGES[route.path];
   if (page) {
     return (
       <DashboardLayout path={route.path} title={page.title} subtitle={page.subtitle}>
-        {route.path === '/dashboard' && <DashboardHome />}
-        {route.path === '/dashboard/bibliothek' && <LibraryPage query={route.query} />}
-        {route.path === '/dashboard/bio-generator' && <BioGeneratorPage />}
-        {route.path === '/dashboard/profil' && <ProfilePage />}
+        {route.path === '/abo-bereich' && <DashboardHome />}
+        {route.path === '/abo-bereich/bibliothek' && <LibraryPage query={route.query} />}
+        {route.path === '/abo-bereich/bio-designer' && <BioGeneratorPage />}
+        {route.path === '/abo-bereich/profil' && <ProfilePage />}
       </DashboardLayout>
     );
   }
 
-  return <HomePage />;
+  return (
+    <PublicShell>
+      {(openContact) => (
+        <main>
+          <LearnlyHero onOpenContact={openContact} />
+          <PricingTeaser />
+          <FaqAccordion />
+        </main>
+      )}
+    </PublicShell>
+  );
 }
 
-function HomePage() {
+/** Gemeinsamer Rahmen der öffentlichen Seiten: Partikel, Footer, Kontakt-Drawer, Impressum. */
+function PublicShell({ children }: { children: (openContact: () => void) => ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [legal, setLegal] = useState<LegalModalType>('none');
 
@@ -98,10 +127,7 @@ function HomePage() {
       <ParticleBackground />
 
       <div className="relative z-10">
-        <main>
-          <LearnlyHero onOpenContact={openDrawer} />
-          <FaqAccordion />
-        </main>
+        {children(openDrawer)}
         <SplitFooter onOpenContact={openDrawer} onOpenLegal={setLegal} />
       </div>
 
@@ -126,7 +152,7 @@ function HomePage() {
   );
 }
 
-/** Wurzelkomponente: Link-Hub, Login, Paywall und Abonnenten-Dashboard (Hash-Routing). */
+/** Wurzelkomponente: Link-Hub, Login, Paywall und Abo-Bereich (Hash-Routing). */
 export default function PortfolioApp() {
   return (
     <AuthProvider>
