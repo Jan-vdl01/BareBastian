@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
+import { useAuth } from '../auth/AuthContext';
 import { PROFILE } from '../data';
 import { ArrowLeft, EyeIcon, EyeOffIcon, GitHubIcon, GoogleIcon, LockIcon, MailIcon } from '../icons';
 
@@ -6,6 +7,8 @@ import { ArrowLeft, EyeIcon, EyeOffIcon, GitHubIcon, GoogleIcon, LockIcon, MailI
 const VIDEO_SRC = 'videos/login-bg.mp4';
 
 type Status = 'idle' | 'loading' | 'info';
+
+/* Nach erfolgreichem Login leitet PortfolioApp automatisch weiter (Dashboard bzw. Abo-Seite). */
 
 /** Video-Spalte mit animiertem Gradient-Fallback, falls (noch) kein Video vorhanden ist. */
 function VideoPanel({ className = '' }: { className?: string }) {
@@ -33,6 +36,7 @@ function VideoPanel({ className = '' }: { className?: string }) {
 /** Vollbild-Anmeldeseite: links Video, rechts abgedunkeltes Formular (mobil: Video als Hintergrund). */
 export function LoginPage() {
   const uid = useId();
+  const { login, loginWithProvider } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -48,20 +52,29 @@ export function LoginPage() {
     };
   }, []);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setError('Bitte gib eine gültige E-Mail-Adresse ein.');
     if (password.length < 6) return setError('Das Passwort muss mindestens 6 Zeichen lang sein.');
     setError(null);
     setStatus('loading');
-    // Platzhalter – hier die echte Authentifizierung anbinden.
-    setTimeout(() => setStatus('info'), 1200);
+    try {
+      await login(email.trim(), password, remember);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Anmeldung fehlgeschlagen.');
+      setStatus('idle');
+    }
   };
 
-  const social = (provider: string) => {
+  const social = async (provider: 'google' | 'github') => {
     setError(null);
-    setStatus('info');
-    console.info(`[Login] OAuth-Provider "${provider}" ist noch nicht angebunden.`);
+    setStatus('loading');
+    try {
+      await loginWithProvider(provider);
+    } catch {
+      setError('Anmeldung fehlgeschlagen.');
+      setStatus('idle');
+    }
   };
 
   const input =
@@ -93,19 +106,19 @@ export function LoginPage() {
           </a>
 
           <h1 className="font-oswald text-4xl tracking-wide text-white">Willkommen zurück</h1>
-          <p className="mt-2 text-slate-400">Melde dich an, um auf deinen Bereich zuzugreifen.</p>
+          <p className="mt-2 text-slate-400">Melde dich an, um dein Abonnenten-Dashboard zu öffnen.</p>
 
           <div className="mt-8 grid grid-cols-2 gap-3">
             <button
               type="button"
-              onClick={() => social('Google')}
+              onClick={() => social('google')}
               className="flex items-center justify-center gap-2.5 rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-semibold text-slate-800 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-white/10 active:scale-[0.98]"
             >
               <GoogleIcon size={18} /> Google
             </button>
             <button
               type="button"
-              onClick={() => social('GitHub')}
+              onClick={() => social('github')}
               className="flex items-center justify-center gap-2.5 rounded-xl border border-white/10 bg-[#161b22] px-4 py-3 text-sm font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:border-white/25 hover:shadow-lg hover:shadow-black/40 active:scale-[0.98]"
             >
               <GitHubIcon size={18} /> GitHub
@@ -187,7 +200,7 @@ export function LoginPage() {
             )}
             {status === 'info' && (
               <p role="status" className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-sm text-cyan-100">
-                Demo-Ansicht: Die Anmeldung ist noch nicht mit einem Backend verbunden.
+                Passwort-Zurücksetzen ist im Demo-Modus noch nicht verfügbar.
               </p>
             )}
 
@@ -202,10 +215,13 @@ export function LoginPage() {
           </form>
 
           <p className="mt-8 text-center text-sm text-slate-500">
-            Noch kein Zugang?{' '}
-            <a href="#links" className="font-medium text-cyan-300 underline-offset-4 hover:underline">
-              Zu den VIP-Plattformen
+            Noch kein Abo?{' '}
+            <a href="#/abo" className="font-medium text-cyan-300 underline-offset-4 hover:underline">
+              Pakete ansehen
             </a>
+          </p>
+          <p className="mt-4 rounded-lg border border-amber-300/20 bg-amber-300/5 px-3 py-2 text-center text-xs text-amber-100/80">
+            Demo-Modus: Beliebige E-Mail und ein Passwort mit mind. 6 Zeichen – das Konto wird automatisch angelegt.
           </p>
         </div>
       </section>

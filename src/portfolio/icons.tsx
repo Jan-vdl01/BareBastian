@@ -69,3 +69,21 @@ export const GoogleIcon: IconComponent = ({ size = 20, ...rest }) => (
     <path fill="#4285F4" d="M21.3 12.2c0-.6-.1-1.1-.2-1.6H12v3.9h5.4a4.7 4.7 0 0 1-2.1 2.4l3.1 2.4c1.8-1.7 2.9-4.1 2.9-7.1Z" />
   </svg>
 );
+
+export const HomeIcon = stroke(<><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1Z" /></>, 'HomeIcon');
+export const LibraryIcon = stroke(<><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>, 'LibraryIcon');
+export const WandIcon = stroke(<><path d="m15 4 5 5L8 21l-5-5Z" /><path d="m12 7 5 5" /><path d="M19 2v3M21 3.5h-3M5 3v2M6 4H4" /></>, 'WandIcon');
+export const UserIcon = stroke(<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>, 'UserIcon');
+export const LogoutIcon = stroke(<><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><path d="m10 17-5-5 5-5M5 12h11" /></>, 'LogoutIcon');
+export const CrownIcon = stroke(<><path d="m3 7 4.5 4L12 4l4.5 7L21 7l-2 12H5Z" /></>, 'CrownIcon');
+export const ImageIcon = stroke(<><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></>, 'ImageIcon');
+export const PostIcon = stroke(<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" /></>, 'PostIcon');
+export const HeartFilledIcon = fill(<path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4 3 5.5l7 7Z" />, 'HeartFilledIcon');
+export const CopyIcon = stroke(<><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></>, 'CopyIcon');
+export const DownloadIcon = stroke(<><path d="M12 3v12m-5-5 5 5 5-5" /><path d="M4 21h16" /></>, 'DownloadIcon');
+export const AlertIcon = stroke(<><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></>, 'AlertIcon');
+export const ChevronLeft = stroke(<path d="m15 18-6-6 6-6" />, 'ChevronLeft');
+export const ChevronRight = stroke(<path d="m9 18 6-6-6-6" />, 'ChevronRight');
+export const ClockIcon = stroke(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>, 'ClockIcon');
+export const PlusIcon = stroke(<path d="M12 5v14M5 12h14" />, 'PlusIcon');
+export const TrashIcon = stroke(<><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></>, 'TrashIcon');

@@ -36,6 +36,8 @@ if (/src="\.\/assets|href="\.\/assets/.test(html)) {
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(path.join(out, 'videos'), { recursive: true });
+mkdirSync(path.join(out, 'media', 'videos'), { recursive: true });
+mkdirSync(path.join(out, 'media', 'photos'), { recursive: true });
 writeFileSync(path.join(out, 'index.html'), html);
 
 // Weitere Dateien aus public/ (z. B. .htaccess, Videos) übernehmen
@@ -61,9 +63,25 @@ writeFileSync(
     '  Ein Video als videos/login-bg.mp4 ablegen – es erscheint automatisch auf der Anmeldeseite.',
     '  Ohne Video wird ein animierter Farbverlauf angezeigt.',
     '',
+    'ABONNENTEN-INHALTE (Dashboard → Bibliothek)',
+    '  Videos als media/videos/v01.mp4 … v08.mp4 ablegen, Fotos als media/photos/p01.jpg … p12.jpg.',
+    '  Titel, Beschreibungen und weitere Einträge stehen im Quellcode in src/portfolio/dashboard/libraryData.ts',
+    '  (danach neu bauen mit: bun run build:standalone).',
+    '',
+    'WICHTIG – DEMO-MODUS',
+    '  Login und Abo laufen nur im Browser (Demo, keine echte Zahlung).',
+    '  Die Paywall ist damit KEIN echter Schutz: Dateien im media-Ordner sind über den direkten Link',
+    '  für jeden abrufbar. Lade echte Abonnenten-Inhalte erst hoch, wenn ein Backend mit Login,',
+    '  Zahlungsanbieter und geschützter Auslieferung angebunden ist.',
+    '',
     'SEITEN',
-    '  index.html          → Link-Hub',
-    '  index.html#/login   → Anmeldeseite',
+    '  index.html                         → Link-Hub',
+    '  index.html#/login                  → Anmeldung',
+    '  index.html#/abo                    → Abo-Pakete (Paywall)',
+    '  index.html#/dashboard              → Dashboard (nur mit Abo)',
+    '  index.html#/dashboard/bibliothek   → Videos, Fotos, Posts',
+    '  index.html#/dashboard/bio-generator → Chaturbate-Bio-Generator',
+    '  index.html#/dashboard/profil       → Profil & Abo',
     '',
   ].join('\r\n'),
 );

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useAuth } from '../auth/AuthContext';
 import { NAV_ITEMS, PROFILE } from '../data';
 import { LockIcon } from '../icons';
 
@@ -8,6 +9,8 @@ interface NavbarProps {
 
 /** Fixierte Navigation mit Glas-Effekt beim Scrollen und CSS-animiertem Burger-Menü. */
 export function Navbar({ onOpenContact }: NavbarProps) {
+  const { user, isSubscribed } = useAuth();
+  const account = user ? (isSubscribed ? { href: '#/dashboard', label: 'Dashboard' } : { href: '#/abo', label: 'Abo abschließen' }) : { href: '#/login', label: 'Anmelden' };
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -70,10 +73,10 @@ export function Navbar({ onOpenContact }: NavbarProps) {
             Kontakt
           </button>
           <a
-            href="#/login"
+            href={account.href}
             className="ml-2 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition-all duration-200 hover:-translate-y-0.5 hover:bg-cyan-100 hover:shadow-lg hover:shadow-cyan-500/20"
           >
-            <LockIcon size={15} /> Anmelden
+            <LockIcon size={15} /> {account.label}
           </a>
         </div>
 
@@ -136,11 +139,11 @@ export function Navbar({ onOpenContact }: NavbarProps) {
               style={{ transitionDelay: open ? `${80 + (NAV_ITEMS.length + 1) * 60}ms` : '0ms' }}
             >
               <a
-                href="#/login"
+                href={account.href}
                 onClick={() => setOpen(false)}
                 className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 font-semibold text-slate-900"
               >
-                <LockIcon size={16} /> Anmelden
+                <LockIcon size={16} /> {account.label}
               </a>
             </li>
           </ul>
