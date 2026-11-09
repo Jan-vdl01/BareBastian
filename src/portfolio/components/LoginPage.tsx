@@ -2,8 +2,8 @@ import { useEffect, useId, useState, type FormEvent } from 'react';
 import { PROFILE } from '../data';
 import { ArrowLeft, EyeIcon, EyeOffIcon, GitHubIcon, GoogleIcon, LockIcon, MailIcon } from '../icons';
 
-/** Platzhalter-Video: Datei unter /public/videos/login-bg.mp4 ablegen, um sie zu ersetzen. */
-const VIDEO_SRC = '/videos/login-bg.mp4';
+/** Platzhalter-Video: Datei unter public/videos/login-bg.mp4 (relativer Pfad) ablegen, um sie zu ersetzen. */
+const VIDEO_SRC = 'videos/login-bg.mp4';
 
 type Status = 'idle' | 'loading' | 'info';
 
