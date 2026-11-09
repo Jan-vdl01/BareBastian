@@ -9,7 +9,7 @@ const COMPARISON: { feature: string; free: boolean; vip: boolean }[] = [
   { feature: 'Premium-Videos in HD streamen', free: false, vip: true },
   { feature: 'Exklusive Fotoalben', free: false, vip: true },
   { feature: 'VIP-Posts & Updates', free: false, vip: true },
-  { feature: 'Chaturbate-Bio-Designer mit HTML-Vorlagen', free: false, vip: true },
+  { feature: 'Modularer Chaturbate-Bio-Baukasten', free: false, vip: true },
   { feature: '„Weiter ansehen“ auf allen Geräten*', free: false, vip: true },
 ];
 

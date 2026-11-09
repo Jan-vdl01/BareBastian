@@ -10,7 +10,7 @@ import { Navbar } from './components/Navbar';
 import { PricingTeaser } from './components/PricingTeaser';
 import { ParticleBackground } from './components/ParticleBackground';
 import { SplitFooter } from './components/SplitFooter';
-import { BioGeneratorPage } from './dashboard/BioGeneratorPage';
+import { BioBuilderPage } from './dashboard/bio-builder/BioBuilderPage';
 import { DashboardHome } from './dashboard/DashboardHome';
 import { DashboardLayout } from './dashboard/DashboardLayout';
 import { LibraryPage } from './dashboard/LibraryPage';
@@ -28,7 +28,7 @@ const DASHBOARD_PAGES: Record<string, { title: string; subtitle: string; adminOn
   '/abo-bereich': { title: 'Abo-Bereich', subtitle: 'Deine Premium-Inhalte & Werkzeuge' },
   '/abo-bereich/bibliothek': { title: 'Bibliothek', subtitle: 'Videos, Fotos & Posts' },
   '/abo-bereich/chat': { title: 'Nachrichten', subtitle: 'Schreib mit anderen Mitgliedern und mit BAREBASTIAN' },
-  '/abo-bereich/bio-designer': { title: 'Chaturbate-Bio-Designer', subtitle: 'Personalisierte HTML-Bio mit Live-Vorschau & Regel-Check' },
+  '/abo-bereich/bio-designer': { title: 'Chaturbate-Bio-Designer', subtitle: 'Baue deine Bio aus Modulen – Chaturbate-kompatibel als Einzeiler' },
   '/abo-bereich/profil': { title: 'Profil', subtitle: 'Wie dich andere Mitglieder sehen' },
   '/abo-bereich/konto': { title: 'Konto & Abo', subtitle: 'Konto und Mitgliedschaft verwalten' },
   '/abo-bereich/verwaltung': { title: 'Verwaltung', subtitle: 'Inhalte veröffentlichen & Mitglieder', adminOnly: true },
@@ -97,7 +97,7 @@ function Router() {
       <DashboardLayout path={route.path} title={page.title} subtitle={page.subtitle}>
         {route.path === '/abo-bereich' && <DashboardHome />}
         {route.path === '/abo-bereich/bibliothek' && <LibraryPage query={route.query} />}
-        {route.path === '/abo-bereich/bio-designer' && <BioGeneratorPage />}
+        {route.path === '/abo-bereich/bio-designer' && <BioBuilderPage />}
         {route.path === '/abo-bereich/chat' && <ChatPage query={route.query} />}
         {route.path === '/abo-bereich/profil' && <ProfilePage query={route.query} />}
         {route.path === '/abo-bereich/konto' && <AccountPage />}

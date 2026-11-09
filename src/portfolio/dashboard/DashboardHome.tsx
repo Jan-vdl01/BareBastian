@@ -129,7 +129,7 @@ export function DashboardHome() {
             <span className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white"><WandIcon size={20} /></span>
             <div className="flex-1">
               <p className="font-medium text-white">Chaturbate-Bio-Designer</p>
-              <p className="text-sm text-slate-400">Eigene HTML-Bio im persönlichen Design</p>
+              <p className="text-sm text-slate-400">Bio aus Modulen zusammenstellen</p>
             </div>
             <ArrowRight size={18} className="text-slate-500 transition-all group-hover:translate-x-1 group-hover:text-violet-300" />
           </a>
