@@ -4,11 +4,12 @@ import { AlertIcon, CheckIcon, ChevronDown, CopyIcon, DownloadIcon, EyeIcon, Eye
 import { downloadBlob } from '../../lib/download';
 import { readJSON } from '../../lib/localStore';
 import { checkBio } from '../bio/chaturbateRules';
-import { COLOR_PRESETS, FONTS, getTemplate, TEMPLATES, type FontId, type TemplateId } from '../bio/designTemplates';
-import { builderInput, Field, ModuleEditor } from './ModuleEditors';
+import { builderInput, Field, FontSelect, ModuleEditor, StyleEditor } from './ModuleEditors';
+import { plainText } from './richText';
+import { COLOR_PRESETS, fontCss, getTheme, THEMES } from './themes';
 import { cloneModule, createModule, getModuleDef, MODULE_CATALOG, projectFromStarter, STARTERS } from './modules';
-import { checkCompatibility, MAX_WIDTH, renderBio } from './renderChaturbate';
-import type { BioModule, BioProject, BioTheme, ModuleType } from './types';
+import { checkCompatibility, isHttpsUrl, MAX_WIDTH, renderBio } from './renderChaturbate';
+import type { BioModule, BioProject, BioTheme, BoxStyle, ModuleType } from './types';
 
 const storageKey = (userId: string) => `bb_bio_project_${userId}`;
 const HISTORY_LIMIT = 50;
@@ -16,7 +17,15 @@ const HISTORY_LIMIT = 50;
 /** Projekt laden: gespeicherte Version des Users oder Startvorlage. */
 function loadProject(userId: string, name: string): BioProject {
   const saved = readJSON<BioProject | null>(storageKey(userId), null);
-  if (saved?.version === 1 && Array.isArray(saved.modules)) return saved;
+  if (saved?.version === 1 && Array.isArray(saved.modules)) {
+    // Ältere Version: Trenner-Art lag im Feld „style“ (heute: Box-Stil)
+    const modules = saved.modules.map((m) => {
+      const legacy = m as unknown as { type: string; style?: unknown; look?: string };
+      if (legacy.type === 'divider' && typeof legacy.style === 'string') return { ...m, look: legacy.style, style: undefined } as BioModule;
+      return m;
+    });
+    return { ...saved, modules };
+  }
   return projectFromStarter(STARTERS[0], name);
 }
 
@@ -61,23 +70,53 @@ function moduleText(m: BioModule): string {
     case 'marquee':
       parts.push(m.text);
       break;
+    case 'ranking':
+      m.items.forEach((x) => parts.push(x.label, x.name, x.value));
+      parts.push(m.footer);
+      break;
+    case 'features':
+      m.items.forEach((x) => parts.push(x.title, x.text));
+      break;
+    case 'chips':
+      m.items.forEach((x) => parts.push(x.label, x.link));
+      break;
+    case 'products':
+      m.items.forEach((x) => parts.push(x.brand, x.badge, x.title, x.text, x.button, x.url));
+      break;
+    case 'levels':
+      m.items.forEach((x) => parts.push(x.label, x.info));
+      parts.push(m.tip);
+      break;
+    case 'cards':
+      m.items.forEach((x) => parts.push(x.tag, x.price, x.title, x.button, x.url, x.imageUrl));
+      parts.push(m.hint);
+      break;
   }
-  return parts.filter(Boolean).join('\n');
+  parts.push(m.eyebrow ?? '', m.subtitle ?? '');
+  return plainText(parts.filter(Boolean).join('\n'));
 }
 
 /** Zusammenfassung für die eingeklappte Modulkarte. */
 function moduleSummary(m: BioModule): string {
+  if (m.type === 'links' && !m.items.some((x) => isHttpsUrl(x.url))) return '⚠ Noch kein gültiger Link – wird nicht angezeigt';
+  if (m.type === 'image' && !isHttpsUrl(m.url)) return '⚠ Noch keine Bild-URL – wird nicht angezeigt';
   switch (m.type) {
     case 'header':
       return m.name;
     case 'text':
-      return m.text.slice(0, 60) || 'Noch kein Text';
+      return plainText(m.text).slice(0, 60) || 'Noch kein Text';
     case 'tipMenu':
     case 'wishList':
     case 'schedule':
     case 'rules':
     case 'links':
     case 'facts':
+    case 'ranking':
+    case 'features':
+    case 'chips':
+    case 'products':
+    case 'levels':
+    case 'cards':
       return m.items.length === 1 ? '1 Eintrag' : `${m.items.length} Einträge`;
     case 'gallery':
       return m.images.length === 1 ? '1 Bild' : `${m.images.length} Bilder`;
@@ -86,11 +125,12 @@ function moduleSummary(m: BioModule): string {
     case 'goal':
       return `${m.current} / ${m.target} ${m.unit}`;
     case 'marquee':
-      return m.text.slice(0, 50);
+      return plainText(m.text).slice(0, 50);
     case 'divider':
-      return { line: 'Linie', dots: 'Punkte', hearts: 'Herzen', stars: 'Sterne', space: 'Abstand' }[m.style];
+      return { line: 'Linie', dots: 'Punkte', hearts: 'Herzen', stars: 'Sterne', space: 'Abstand' }[m.look];
   }
 }
+
 
 function Panel({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
   return (
@@ -123,6 +163,8 @@ export function BioBuilderPage() {
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [pageDark, setPageDark] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [moduleTab, setModuleTab] = useState<'content' | 'style'>('content');
+  const [styleClipboard, setStyleClipboard] = useState<BoxStyle | null>(null);
   const listRef = useRef<HTMLOListElement>(null);
 
   // Pro User speichern
@@ -157,9 +199,9 @@ export function BioBuilderPage() {
   }, [undo, redo]);
 
   const setTheme = <K extends keyof BioTheme>(key: K, value: BioTheme[K]) => commit((p) => ({ ...p, theme: { ...p.theme, [key]: value } }));
-  const choosePreset = (id: TemplateId) => {
-    const t = getTemplate(id);
-    commit((p) => ({ ...p, theme: { ...p.theme, preset: id, accent: t.accent, accent2: t.accent2, font: t.font, radius: t.radius } }));
+  const choosePreset = (id: string) => {
+    const t = getTheme(id);
+    commit((p) => ({ ...p, theme: { ...p.theme, preset: t.id, accent: t.accent, accent2: t.accent2, font: t.font, headingFont: t.headingFont, radius: t.radius } }));
   };
 
   const updateModule = (m: BioModule) => commit((p) => ({ ...p, modules: p.modules.map((x) => (x.id === m.id ? m : x)) }));
@@ -207,7 +249,7 @@ export function BioBuilderPage() {
     setTimeout(() => setCopied(false), 1800);
   };
 
-  const preset = getTemplate(project.theme.preset);
+  const preset = getTheme(project.theme.preset);
   const previewDoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:16px 10px;background:${pageDark ? '#1b1b1f' : '#ffffff'};font-family:Arial,sans-serif;font-size:13px;color:${pageDark ? '#ddd' : '#494949'}">${html}</body></html>`;
 
   return (
@@ -257,9 +299,9 @@ export function BioBuilderPage() {
             </button>
           }
         >
-          <div className="flex flex-wrap gap-2">
-            {TEMPLATES.map((t) => {
-              const pal = t.palette(t.accent, t.accent2);
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {THEMES.map((t) => {
+              const k = t.tokens(t.accent, t.accent2);
               const active = project.theme.preset === t.id;
               return (
                 <button
@@ -267,10 +309,22 @@ export function BioBuilderPage() {
                   type="button"
                   onClick={() => choosePreset(t.id)}
                   aria-pressed={active}
-                  className={`flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-xs transition-all ${active ? 'border-violet-400/70 bg-violet-400/10 text-white' : 'border-white/10 text-slate-300 hover:border-white/25'}`}
+                  title={t.description}
+                  className={`group overflow-hidden rounded-xl border text-left transition-all ${active ? 'border-violet-400 ring-2 ring-violet-400/40' : 'border-white/10 hover:-translate-y-0.5 hover:border-white/30'}`}
                 >
-                  <span className="h-6 w-6 rounded-full" style={{ background: pal.pageBg, boxShadow: `inset 0 0 0 2px ${t.accent}` }} />
-                  {t.name}
+                  <span className="block h-16 p-2" style={{ background: k.boxBg, borderTop: k.boxBorderTop }}>
+                    <span className="inline-block rounded px-1.5 text-[7px] font-bold uppercase tracking-widest" style={{ background: k.eyebrowBg, color: k.eyebrowText, border: k.eyebrowBorder }}>
+                      Label
+                    </span>
+                    <span className="mt-1 block truncate text-[11px] font-black" style={{ color: k.heading, fontFamily: fontCss(t.headingFont) }}>
+                      Überschrift
+                    </span>
+                    <span className="mt-1 block h-2.5 w-3/4 rounded" style={{ background: k.buttonBg }} />
+                  </span>
+                  <span className="block bg-slate-950/60 px-2 py-1.5">
+                    <span className="block truncate text-[11px] font-semibold text-white">{t.name}</span>
+                    <span className="block truncate text-[10px] text-slate-500">{t.description}</span>
+                  </span>
                 </button>
               );
             })}
@@ -293,15 +347,12 @@ export function BioBuilderPage() {
                   <input type="color" aria-label="Akzentfarbe 2" value={project.theme.accent2} onChange={(e) => setTheme('accent2', e.target.value)} className="h-7 w-7 cursor-pointer rounded border-0 bg-transparent" />
                 </div>
               </Field>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Field label="Schrift" htmlFor="bb-font">
-                  <select id="bb-font" className={builderInput} value={project.theme.font} onChange={(e) => setTheme('font', e.target.value as FontId)}>
-                    {(Object.keys(FONTS) as FontId[]).map((f) => (
-                      <option key={f} value={f} className="bg-slate-900">
-                        {FONTS[f].label}
-                      </option>
-                    ))}
-                  </select>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Fließtext-Schrift" htmlFor="bb-font">
+                  <FontSelect id="bb-font" allowTheme={false} value={project.theme.font} onChange={(v) => v && setTheme('font', v)} />
+                </Field>
+                <Field label="Überschrift-Schrift" htmlFor="bb-hfont">
+                  <FontSelect id="bb-hfont" allowTheme={false} value={project.theme.headingFont ?? preset.headingFont} onChange={(v) => v && setTheme('headingFont', v)} />
                 </Field>
                 <Field label="Anordnung" htmlFor="bb-layout">
                   <select id="bb-layout" className={builderInput} value={project.theme.layout} onChange={(e) => setTheme('layout', e.target.value as BioTheme['layout'])}>
@@ -313,6 +364,8 @@ export function BioBuilderPage() {
                   <select id="bb-align" className={builderInput} value={project.theme.align} onChange={(e) => setTheme('align', e.target.value as BioTheme['align'])}>
                     <option value="center" className="bg-slate-900">Zentriert</option>
                     <option value="left" className="bg-slate-900">Links</option>
+                    <option value="right" className="bg-slate-900">Rechts</option>
+                    <option value="justify" className="bg-slate-900">Blocksatz</option>
                   </select>
                 </Field>
               </div>
@@ -416,9 +469,40 @@ export function BioBuilderPage() {
                     </div>
                   </div>
                   <div className={`grid transition-[grid-template-rows] duration-300 ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                    <div className="overflow-hidden">{open && <div className="border-t border-white/5 p-4">
-                      <ModuleEditor module={m} onChange={updateModule} />
-                    </div>}</div>
+                    <div className="overflow-hidden">
+                      {open && (
+                        <div className="border-t border-white/5 p-4">
+                          <div className="mb-4 flex flex-wrap items-center gap-2">
+                            <div role="tablist" aria-label="Modul bearbeiten" className="inline-flex rounded-lg border border-white/10 p-0.5">
+                              {(
+                                [
+                                  ['content', 'Inhalt'],
+                                  ['style', 'Stil'],
+                                ] as const
+                              ).map(([k, l]) => (
+                                <button key={k} type="button" role="tab" aria-selected={moduleTab === k} onClick={() => setModuleTab(k)} className={`rounded-md px-3 py-1 text-xs ${moduleTab === k ? 'bg-violet-500 font-semibold text-white' : 'text-slate-400 hover:text-white'}`}>
+                                  {l}
+                                </button>
+                              ))}
+                            </div>
+                            {moduleTab === 'style' && (
+                              <span className="flex flex-wrap gap-1 text-[11px]">
+                                <button type="button" onClick={() => setStyleClipboard(m.style ?? {})} className="rounded-md border border-white/10 px-2 py-1 text-slate-300 hover:bg-white/5">
+                                  Stil kopieren
+                                </button>
+                                <button type="button" disabled={!styleClipboard} onClick={() => styleClipboard && updateModule({ ...m, style: { ...styleClipboard } } as BioModule)} className="rounded-md border border-white/10 px-2 py-1 text-slate-300 hover:bg-white/5 disabled:opacity-30">
+                                  Stil einfügen
+                                </button>
+                                <button type="button" disabled={!m.style} onClick={() => updateModule({ ...m, style: undefined, align: undefined } as BioModule)} className="rounded-md border border-white/10 px-2 py-1 text-slate-300 hover:bg-white/5 disabled:opacity-30">
+                                  Zurücksetzen
+                                </button>
+                              </span>
+                            )}
+                          </div>
+                          {moduleTab === 'content' ? <ModuleEditor module={m} onChange={updateModule} /> : <StyleEditor module={m} onChange={updateModule} />}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </li>
               );
