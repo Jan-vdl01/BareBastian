@@ -2,32 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useAuth } from '../../auth/AuthContext';
 import { AlertIcon, CheckIcon, ChevronDown, CopyIcon, DownloadIcon, EyeIcon, EyeOffIcon, PlusIcon, TrashIcon, XIcon } from '../../icons';
 import { downloadBlob } from '../../lib/download';
-import { readJSON } from '../../lib/localStore';
 import { checkBio } from '../bio/chaturbateRules';
 import { builderInput, Field, FontSelect, ModuleEditor, StyleEditor } from './ModuleEditors';
 import { plainText } from './richText';
 import { COLOR_PRESETS, fontCss, getTheme, THEMES } from './themes';
 import { cloneModule, createModule, getModuleDef, MODULE_CATALOG, projectFromStarter, STARTERS } from './modules';
+import { deleteVersion, duplicateProject, exportProjects, renameProject, saveProjectData, saveVersion, useLibrary, type StoredProject } from './projectStore';
+import { navigate } from '../../router';
 import { checkCompatibility, isHttpsUrl, MAX_WIDTH, renderBio } from './renderChaturbate';
 import type { BioModule, BioProject, BioTheme, BoxStyle, ModuleType } from './types';
 
-const storageKey = (userId: string) => `bb_bio_project_${userId}`;
 const HISTORY_LIMIT = 50;
-
-/** Projekt laden: gespeicherte Version des Users oder Startvorlage. */
-function loadProject(userId: string, name: string): BioProject {
-  const saved = readJSON<BioProject | null>(storageKey(userId), null);
-  if (saved?.version === 1 && Array.isArray(saved.modules)) {
-    // Ältere Version: Trenner-Art lag im Feld „style“ (heute: Box-Stil)
-    const modules = saved.modules.map((m) => {
-      const legacy = m as unknown as { type: string; style?: unknown; look?: string };
-      if (legacy.type === 'divider' && typeof legacy.style === 'string') return { ...m, look: legacy.style, style: undefined } as BioModule;
-      return m;
-    });
-    return { ...saved, modules };
-  }
-  return projectFromStarter(STARTERS[0], name);
-}
 
 /** Alle sichtbaren Texte eines Moduls – für den Regel-Check. */
 function moduleText(m: BioModule): string {
@@ -144,14 +129,37 @@ function Panel({ title, children, right }: { title: string; children: ReactNode;
   );
 }
 
-export function BioBuilderPage() {
-  const { user, profile } = useAuth();
+/** Editor-Seite: lädt das gewählte Profil aus der Ablage des Users. */
+export function BioBuilderPage({ projectId }: { projectId: string | null }) {
+  const { user } = useAuth();
   const userId = user?.id ?? 'anon';
+  const lib = useLibrary(userId);
+  const stored = lib.projects.find((p) => p.id === projectId);
+  if (!stored) {
+    return (
+      <div className="rounded-3xl border border-white/10 bg-slate-900/50 p-10 text-center">
+        <p className="font-oswald text-2xl text-white">Profil nicht gefunden</p>
+        <p className="mt-1 text-sm text-slate-400">Vielleicht wurde es gelöscht.</p>
+        <a href="#/abo-bereich/bio-designer" className="mt-4 inline-block rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-5 py-2.5 text-sm font-semibold text-white">
+          Zur Übersicht
+        </a>
+      </div>
+    );
+  }
+  return <BioEditor key={stored.id} userId={userId} stored={stored} />;
+}
+
+function BioEditor({ userId, stored }: { userId: string; stored: StoredProject }) {
+  const { profile } = useAuth();
+  const projectId = stored.id;
   const [history, setHistory] = useState<{ past: BioProject[]; present: BioProject; future: BioProject[] }>(() => ({
     past: [],
-    present: loadProject(userId, profile?.displayName ?? ''),
+    present: stored.project,
     future: [],
   }));
+  const [savedAt, setSavedAt] = useState<string>(stored.updatedAt);
+  const [name, setName] = useState(stored.name);
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const project = history.present;
   const [openId, setOpenId] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
@@ -167,11 +175,21 @@ export function BioBuilderPage() {
   const [styleClipboard, setStyleClipboard] = useState<BoxStyle | null>(null);
   const listRef = useRef<HTMLOListElement>(null);
 
-  // Pro User speichern
+  // Automatisch speichern (leicht verzögert)
+  const firstRender = useRef(true);
   useEffect(() => {
-    const t = setTimeout(() => localStorage.setItem(storageKey(userId), JSON.stringify(project)), 250);
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    const t = setTimeout(() => {
+      saveProjectData(userId, projectId, project);
+      setSavedAt(new Date().toISOString());
+    }, 300);
     return () => clearTimeout(t);
-  }, [project, userId]);
+  }, [project, userId, projectId]);
+
+  const flush = () => saveProjectData(userId, projectId, project);
 
   const commit = useCallback((fn: (p: BioProject) => BioProject) => {
     setHistory((h) => ({
@@ -256,6 +274,95 @@ export function BioBuilderPage() {
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       {/* ---------- Editor ---------- */}
       <div className="space-y-5">
+        {/* Profil-Leiste: Name, Speichern, Versionen */}
+        <section className="rounded-2xl border border-white/10 bg-slate-900/50 p-4 backdrop-blur-xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <a href="#/abo-bereich/bio-designer" onClick={flush} className="rounded-lg px-2 py-1.5 text-xs text-slate-400 hover:bg-white/5 hover:text-white">
+              ← Alle Profile
+            </a>
+            <input
+              aria-label="Name des Profils"
+              value={name}
+              maxLength={60}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => renameProject(userId, projectId, name)}
+              onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
+              className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1 font-oswald text-lg tracking-wide text-white hover:border-white/10 focus:border-violet-400/60 focus:outline-none"
+            />
+            <span className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-slate-300">📁 {stored.folder}</span>
+            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-300" aria-live="polite">
+              <CheckIcon size={12} /> Gespeichert {new Date(savedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                const label = window.prompt('Name der Version', `Version ${stored.versions.length + 1}`);
+                if (label === null) return;
+                flush();
+                saveVersion(userId, projectId, label);
+                setVersionsOpen(true);
+              }}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-slate-200 hover:bg-white/5"
+            >
+              Version sichern
+            </button>
+            <button type="button" onClick={() => setVersionsOpen((v) => !v)} aria-expanded={versionsOpen} className="rounded-lg border border-white/10 px-3 py-1.5 text-slate-200 hover:bg-white/5">
+              Versionen ({stored.versions.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const n = window.prompt('Name der Kopie', `${name} (Kopie)`);
+                if (n === null) return;
+                flush();
+                const copy = duplicateProject(userId, projectId, n);
+                if (copy) navigate(`/abo-bereich/bio-designer/edit?p=${copy.id}`);
+              }}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-slate-200 hover:bg-white/5"
+            >
+              Als Kopie speichern
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                flush();
+                downloadBlob(new Blob([exportProjects(userId, [projectId])], { type: 'application/json' }), `${name.replace(/[^\w-]+/g, '_')}.bio.json`);
+              }}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-slate-200 hover:bg-white/5"
+            >
+              <DownloadIcon size={12} className="mr-1 inline" />
+              Exportieren
+            </button>
+          </div>
+          {versionsOpen && (
+            <ul className="mt-3 space-y-1.5 border-t border-white/5 pt-3">
+              {stored.versions.length === 0 && <li className="text-xs text-slate-500">Noch keine Versionen. Mit „Version sichern“ hältst du einen Stand fest, zu dem du jederzeit zurückkehren kannst.</li>}
+              {stored.versions.map((v) => (
+                <li key={v.id} className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-3 py-2 text-xs">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-white">{v.label}</span>
+                    <span className="text-slate-500">{new Date(v.savedAt).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })} · {v.project.modules.length} Module</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(`Version „${v.label}“ wiederherstellen? Der aktuelle Stand lässt sich mit „Rückgängig“ zurückholen.`)) commit(() => JSON.parse(JSON.stringify(v.project)));
+                    }}
+                    className="rounded-md bg-violet-500/20 px-2.5 py-1 text-violet-100 hover:bg-violet-500/35"
+                  >
+                    Wiederherstellen
+                  </button>
+                  <button type="button" onClick={() => deleteVersion(userId, projectId, v.id)} aria-label={`Version ${v.label} löschen`} className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-rose-500/10 hover:text-rose-300">
+                    <TrashIcon size={13} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={undo} disabled={!history.past.length} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 disabled:opacity-30" title="Strg+Z">
             ↶ Rückgängig

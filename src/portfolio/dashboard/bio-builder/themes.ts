@@ -69,9 +69,15 @@ export interface ThemeTokens {
   chipText: string;
 }
 
+export const THEME_CATEGORIES = ['Dunkel', 'Hell', 'Neon', 'Warm', 'Kühl', 'Luxus', 'Verspielt', 'Minimal', 'Natur', 'Bunt'] as const;
+export type ThemeCategory = (typeof THEME_CATEGORIES)[number];
+
 export interface ThemeDef {
   id: string;
   name: string;
+  categories: ThemeCategory[];
+  /** Neu hinzugefügt (Hinweis in der Galerie) */
+  isNew?: boolean;
   description: string;
   accent: string;
   accent2: string;
@@ -144,6 +150,7 @@ const light = (o: { bg: string; text: string; muted: string; a: string; b: strin
 export const THEMES: ThemeDef[] = [
   {
     id: 'inferno',
+    categories: ['Dunkel', 'Warm', 'Neon'], isNew: true,
     name: 'Inferno Studio',
     description: 'Glühendes Rot-Orange auf Dunkelrot – dein Profil-Look',
     accent: '#ff5a1f',
@@ -162,6 +169,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'neon',
+    categories: ['Dunkel', 'Neon', 'Kühl'],
     name: 'Neon Night',
     description: 'Cyan & Violett, leuchtend',
     accent: '#22d3ee',
@@ -173,6 +181,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'midnight-gold',
+    categories: ['Dunkel', 'Luxus'], isNew: true,
     name: 'Midnight Gold',
     description: 'Schwarz & Gold, luxuriös',
     accent: '#d4af37',
@@ -184,6 +193,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'cyber',
+    categories: ['Dunkel', 'Neon', 'Kühl'], isNew: true,
     name: 'Cyber Grid',
     description: 'Magenta & Cyan, Terminal-Look',
     accent: '#00ffd5',
@@ -201,6 +211,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'lava',
+    categories: ['Dunkel', 'Warm', 'Bunt'], isNew: true,
     name: 'Lava Lamp',
     description: 'Violett trifft Orange',
     accent: '#ff7a18',
@@ -212,6 +223,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'toxic',
+    categories: ['Dunkel', 'Neon'], isNew: true,
     name: 'Toxic Lime',
     description: 'Schwarz & Neon-Grün',
     accent: '#a3ff12',
@@ -223,6 +235,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'royal',
+    categories: ['Dunkel', 'Luxus'], isNew: true,
     name: 'Royal Velvet',
     description: 'Tiefes Violett mit Gold',
     accent: '#c9a227',
@@ -234,6 +247,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'forest',
+    categories: ['Dunkel', 'Natur'], isNew: true,
     name: 'Forest Lounge',
     description: 'Dunkelgrün, ruhig & warm',
     accent: '#7bd389',
@@ -245,6 +259,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'noir',
+    categories: ['Dunkel', 'Minimal'], isNew: true,
     name: 'Monochrome Noir',
     description: 'Schwarz-Weiß, editorial',
     accent: '#ffffff',
@@ -256,6 +271,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'retro',
+    categories: ['Dunkel', 'Verspielt', 'Bunt'],
     name: 'Retro Arcade',
     description: 'Pixel-Vibes, Pink & Gelb',
     accent: '#ff5ecf',
@@ -267,6 +283,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'gradient',
+    categories: ['Bunt', 'Verspielt'],
     name: 'Sunset Glow',
     description: 'Farbverlauf mit Glas-Karten',
     accent: '#6366f1',
@@ -292,6 +309,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'bubblegum',
+    categories: ['Hell', 'Verspielt', 'Bunt'], isNew: true,
     name: 'Bubblegum Pop',
     description: 'Pastell-Pink, verspielt',
     accent: '#ff4fa3',
@@ -303,6 +321,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'ocean',
+    categories: ['Hell', 'Kühl', 'Natur'], isNew: true,
     name: 'Ocean Breeze',
     description: 'Hell, Türkis & Blau',
     accent: '#0891b2',
@@ -314,6 +333,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'ice',
+    categories: ['Hell', 'Kühl', 'Minimal'], isNew: true,
     name: 'Ice Glass',
     description: 'Frostig, klar & modern',
     accent: '#3b82f6',
@@ -325,6 +345,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'minimal',
+    categories: ['Hell', 'Minimal'],
     name: 'Clean',
     description: 'Weiß, ruhig & modern',
     accent: '#2563eb',
@@ -336,6 +357,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'elegant',
+    categories: ['Hell', 'Luxus', 'Warm'],
     name: 'Elegance',
     description: 'Creme, Serifen & Gold',
     accent: '#b08d57',
