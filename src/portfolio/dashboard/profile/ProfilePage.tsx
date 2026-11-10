@@ -4,6 +4,11 @@ import { useProfiles, type Profile } from '../../auth/userDirectory';
 import { CREATOR_ID } from '../../config/admin';
 import { CalendarIcon, ChatIcon, CheckIcon, InstagramIcon, LinkIcon, MapPinIcon, PencilIcon, SettingsIcon, TelegramIcon, XBrandIcon } from '../../icons';
 import { coverGradient, ProfileAvatar, ProfileName } from './ProfileAvatar';
+import { PostCard } from '../social/PostCard';
+import { PostComposer } from '../social/PostComposer';
+import { FollowButton } from '../social/SocialPage';
+import { canSee, ensureMember, followersOf, followingOf, useSocial, type SocialPost } from '../social/socialStore';
+import { useEffect } from 'react';
 import { ProfileEditor } from './ProfileEditor';
 
 const joined = (iso: string) => new Date(iso).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
@@ -31,6 +36,11 @@ export function ProfilePage({ query }: { query: URLSearchParams }) {
   const { user } = useAuth();
   const profiles = useProfiles();
   const [editing, setEditing] = useState(false);
+  const [composer, setComposer] = useState<{ editing?: SocialPost } | null>(null);
+  const social = useSocial();
+  useEffect(() => {
+    if (user?.id) ensureMember(user.id);
+  }, [user?.id]);
   const targetId = query.get('u') ?? user?.id ?? '';
   const profile = profiles[targetId];
   const isOwn = targetId === user?.id;
@@ -55,6 +65,7 @@ export function ProfilePage({ query }: { query: URLSearchParams }) {
   }
 
   const progress = completeness(profile);
+  const posts = social.posts.filter((p) => p.authorId === profile.id && canSee(social, p, user?.id ?? '')).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const socials = (Object.keys(SOCIAL_LINKS) as (keyof typeof SOCIAL_LINKS)[]).filter((k) => profile.socials[k]);
 
   return (
@@ -84,12 +95,15 @@ export function ProfilePage({ query }: { query: URLSearchParams }) {
                     </a>
                   </>
                 ) : (
+                  <>
+                  <FollowButton me={user?.id ?? ''} target={profile.id} />
                   <a
                     href={`#/abo-bereich/chat?c=${profile.id}`}
                     className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition-all hover:-translate-y-0.5"
                   >
                     <ChatIcon size={16} /> Nachricht senden
                   </a>
+                  </>
                 )}
               </div>
             </div>
@@ -165,7 +179,36 @@ export function ProfilePage({ query }: { query: URLSearchParams }) {
                 })}
               </div>
             )}
+            <dl className="mt-5 flex gap-6 border-t border-white/5 pt-4 text-sm">
+              {[
+                ['Posts', posts.length],
+                ['Follower', followersOf(social, profile.id).length],
+                ['Folge ich', followingOf(social, profile.id).length],
+              ].map(([k, v]) => (
+                <div key={k} className="flex items-baseline gap-1.5">
+                  <dd className="font-semibold text-white">{v}</dd>
+                  <dt className="text-slate-500">{k}</dt>
+                </div>
+              ))}
+            </dl>
           </div>
+        </section>
+
+        <section aria-labelledby="profile-posts" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 id="profile-posts" className="font-oswald text-xl tracking-wide text-white">
+              Posts
+            </h3>
+            {isOwn && (
+              <button type="button" onClick={() => setComposer({})} className="rounded-full bg-gradient-to-r from-sky-500 to-violet-600 px-4 py-2 text-sm font-semibold text-white">
+                + Neuer Post
+              </button>
+            )}
+          </div>
+          {posts.map((p) => (
+            <PostCard key={p.id} post={p} onEdit={(x) => setComposer({ editing: x })} />
+          ))}
+          {!posts.length && <p className="rounded-3xl border border-dashed border-white/15 px-6 py-10 text-center text-sm text-slate-500">{isOwn ? 'Du hast noch nichts gepostet.' : 'Noch keine Posts.'}</p>}
         </section>
       </div>
 
@@ -212,6 +255,7 @@ export function ProfilePage({ query }: { query: URLSearchParams }) {
       </aside>
 
       {editing && isOwn && <ProfileEditor profile={profile} onClose={() => setEditing(false)} />}
+      {composer && <PostComposer editing={composer.editing} onClose={() => setComposer(null)} />}
     </div>
   );
 }

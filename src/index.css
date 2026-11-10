@@ -119,3 +119,21 @@ html {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------- Druck (PDF-Bericht) ---------- */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  html,
+  body {
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  tr,
+  section {
+    break-inside: avoid;
+  }
+}

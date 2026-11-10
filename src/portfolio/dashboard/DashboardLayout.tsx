@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { PROFILE } from '../data';
-import { ArrowLeft, ChartIcon, ChatIcon, CrownIcon, HomeIcon, LibraryIcon, LogoutIcon, Shield, UserIcon, WandIcon, type IconComponent } from '../icons';
+import { ArrowLeft, ChartIcon, ChatIcon, UsersIcon, XIcon, CrownIcon, HomeIcon, LibraryIcon, LogoutIcon, Shield, UserIcon, WandIcon, type IconComponent } from '../icons';
 import { navigate } from '../router';
 import { AdminBadge } from './admin/AdminUI';
 import { useUnreadCount } from './chat/chatStore';
@@ -13,15 +13,18 @@ export interface DashboardNavItem {
   short: string;
   icon: IconComponent;
   adminOnly?: boolean;
+  /** In der mobilen Tab-Leiste direkt sichtbar (Rest unter „Mehr“) */
+  mobile?: boolean;
 }
 
 export const DASHBOARD_NAV: DashboardNavItem[] = [
-  { path: '/abo-bereich', label: 'Übersicht', short: 'Start', icon: HomeIcon },
-  { path: '/abo-bereich/bibliothek', label: 'Bibliothek', short: 'Bibliothek', icon: LibraryIcon },
-  { path: '/abo-bereich/chat', label: 'Nachrichten', short: 'Chat', icon: ChatIcon },
+  { path: '/abo-bereich', label: 'Übersicht', short: 'Start', icon: HomeIcon, mobile: true },
+  { path: '/abo-bereich/social', label: 'Social Hub', short: 'Social', icon: UsersIcon, mobile: true },
+  { path: '/abo-bereich/bibliothek', label: 'Bibliothek', short: 'Bibliothek', icon: LibraryIcon, mobile: true },
+  { path: '/abo-bereich/chat', label: 'Nachrichten', short: 'Chat', icon: ChatIcon, mobile: true },
   { path: '/abo-bereich/bio-designer', label: 'Bio-Designer', short: 'Bio', icon: WandIcon },
   { path: '/abo-bereich/finanzen', label: 'Finanzen', short: 'Finanzen', icon: ChartIcon },
-  { path: '/abo-bereich/profil', label: 'Mein Profil', short: 'Profil', icon: UserIcon },
+  { path: '/abo-bereich/profil', label: 'Mein Profil', short: 'Profil', icon: UserIcon, mobile: true },
   { path: '/abo-bereich/verwaltung', label: 'Verwaltung', short: 'Admin', icon: Shield, adminOnly: true },
 ];
 
@@ -37,6 +40,8 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ path, title, subtitle, actions, children }: DashboardLayoutProps) {
   const { user, profile, isAdmin, logout } = useAuth();
   const unread = useUnreadCount(user?.id);
+  const [more, setMore] = useState(false);
+  useEffect(() => setMore(false), [path]);
   if (!user) return null;
 
   // Admin-Einträge werden für Nicht-Admins gar nicht erst gerendert.
@@ -147,8 +152,8 @@ export function DashboardLayout({ path, title, subtitle, actions, children }: Da
 
       {/* Mobile Tab-Leiste */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-[#080b12]/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden" aria-label="Abo-Bereich">
-        <ul className="grid" style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}>
-          {nav.map((item) => {
+        <ul className="grid grid-cols-6">
+          {nav.filter((item) => item.mobile).map((item) => {
             const active = isActive(item.path);
             const Icon = item.icon;
             return (
@@ -156,7 +161,7 @@ export function DashboardLayout({ path, title, subtitle, actions, children }: Da
                 <a
                   href={`#${item.path}`}
                   aria-current={active ? 'page' : undefined}
-                  className={`flex flex-col items-center gap-1 py-2.5 text-[11px] transition-colors ${active ? (item.adminOnly ? 'text-amber-200' : 'text-cyan-300') : 'text-slate-500'}`}
+                  className={`flex flex-col items-center gap-1 py-2.5 text-[11px] transition-colors ${active ? 'text-cyan-300' : 'text-slate-500'}`}
                 >
                   <span className="relative">
                     <Icon size={20} className={`transition-transform duration-300 ${active ? '-translate-y-0.5' : ''}`} />
@@ -167,8 +172,50 @@ export function DashboardLayout({ path, title, subtitle, actions, children }: Da
               </li>
             );
           })}
+          <li>
+            <button
+              type="button"
+              onClick={() => setMore((v) => !v)}
+              aria-expanded={more}
+              className={`flex w-full flex-col items-center gap-1 py-2.5 text-[11px] transition-colors ${more || nav.some((n) => !n.mobile && isActive(n.path)) ? 'text-cyan-300' : 'text-slate-500'}`}
+            >
+              <span className="grid h-5 place-items-center text-lg leading-none">⋯</span>
+              Mehr
+            </button>
+          </li>
         </ul>
       </nav>
+      {more && (
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Weitere Bereiche">
+          <button type="button" tabIndex={-1} aria-label="Schließen" className="absolute inset-0 bg-black/60" onClick={() => setMore(false)} />
+          <div className="animate-fade-up absolute inset-x-0 bottom-0 rounded-t-3xl border-t border-white/10 bg-[#0b0f18] p-4 pb-[calc(env(safe-area-inset-bottom)+5.5rem)]">
+            <div className="mb-2 flex items-center justify-between px-2">
+              <p className="font-oswald text-lg text-white">Weitere Bereiche</p>
+              <button type="button" onClick={() => setMore(false)} aria-label="Schließen" className="grid h-8 w-8 place-items-center rounded-full bg-white/5 text-slate-300">
+                <XIcon size={14} />
+              </button>
+            </div>
+            <ul className="grid grid-cols-2 gap-2">
+              {nav.filter((n) => !n.mobile).map((item) => {
+                const Icon = item.icon;
+                return (
+                  <li key={item.path}>
+                    <a href={`#${item.path}`} className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm ${isActive(item.path) ? 'border-cyan-400/40 bg-cyan-400/10 text-white' : 'border-white/10 text-slate-200'}`}>
+                      <Icon size={18} className={item.adminOnly ? 'text-amber-200' : 'text-cyan-300'} />
+                      {item.label}
+                    </a>
+                  </li>
+                );
+              })}
+              <li>
+                <a href="#/abo-bereich/konto" className="flex items-center gap-3 rounded-2xl border border-white/10 px-4 py-3 text-sm text-slate-200">
+                  <UserIcon size={18} className="text-cyan-300" /> Konto & Abo
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

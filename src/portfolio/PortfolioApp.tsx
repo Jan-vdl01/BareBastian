@@ -21,19 +21,23 @@ import { ChatPage } from './dashboard/chat/ChatPage';
 import { ProfilePage } from './dashboard/profile/ProfilePage';
 import { ContentProvider } from './content/ContentContext';
 import { FinanceDashboard, FinanceSettingsPage, FinanceStreams } from './dashboard/finance/FinancePages';
+import { FinanceReport } from './dashboard/finance/FinanceReport';
+import { SocialPage } from './dashboard/social/SocialPage';
 import { MailIcon, XIcon } from './icons';
 import { PricingPage } from './pages/PricingPage';
 import { SubscribePage } from './pages/SubscribePage';
 import { navigate, useHashRoute, type HashRoute } from './router';
 
-const DASHBOARD_PAGES: Record<string, { title: string; subtitle: string; adminOnly?: boolean }> = {
+const DASHBOARD_PAGES: Record<string, { title: string; subtitle: string; adminOnly?: boolean; bare?: boolean }> = {
   '/abo-bereich': { title: 'Abo-Bereich', subtitle: 'Deine Premium-Inhalte & Werkzeuge' },
+  '/abo-bereich/social': { title: 'Social Hub', subtitle: 'Posts von Leuten, denen du folgst – und neue Entdeckungen' },
   '/abo-bereich/bibliothek': { title: 'Bibliothek', subtitle: 'Videos, Fotos & Posts' },
   '/abo-bereich/chat': { title: 'Nachrichten', subtitle: 'Schreib mit anderen Mitgliedern und mit BAREBASTIAN' },
   '/abo-bereich/bio-designer': { title: 'Chaturbate-Bio-Designer', subtitle: 'Deine Profile & die Theme-Galerie' },
   '/abo-bereich/bio-designer/edit': { title: 'Bio-Designer', subtitle: 'Baue deine Bio aus Modulen – Chaturbate-kompatibel als Einzeiler' },
   '/abo-bereich/finanzen': { title: 'Finanzen', subtitle: 'Einnahmen pro Stream auswerten' },
   '/abo-bereich/finanzen/streams': { title: 'Finanzen · Streams', subtitle: 'Alle Einträge ansehen, bearbeiten & löschen' },
+  '/abo-bereich/finanzen/bericht': { title: 'Finanzbericht', subtitle: '', bare: true },
   '/abo-bereich/finanzen/einstellungen': { title: 'Finanzen · Einstellungen', subtitle: 'Token-Wert, Währung, Kategorien & Toys' },
   '/abo-bereich/profil': { title: 'Profil', subtitle: 'Wie dich andere Mitglieder sehen' },
   '/abo-bereich/konto': { title: 'Konto & Abo', subtitle: 'Konto und Mitgliedschaft verwalten' },
@@ -98,6 +102,7 @@ function Router() {
   }
 
   const page = DASHBOARD_PAGES[route.path];
+  if (page?.bare && route.path === '/abo-bereich/finanzen/bericht') return <FinanceReport query={route.query} />;
   if (page) {
     return (
       <DashboardLayout path={route.path} title={page.title} subtitle={page.subtitle}>
@@ -106,6 +111,7 @@ function Router() {
         {route.path === '/abo-bereich/bio-designer' && <BioHubPage />}
         {route.path === '/abo-bereich/bio-designer/edit' && <BioBuilderPage projectId={route.query.get('p')} />}
         {route.path === '/abo-bereich/chat' && <ChatPage query={route.query} />}
+        {route.path === '/abo-bereich/social' && <SocialPage query={route.query} />}
         {route.path === '/abo-bereich/finanzen' && <FinanceDashboard />}
         {route.path === '/abo-bereich/finanzen/streams' && <FinanceStreams />}
         {route.path === '/abo-bereich/finanzen/einstellungen' && <FinanceSettingsPage />}

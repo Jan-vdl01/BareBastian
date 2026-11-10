@@ -250,3 +250,165 @@ export function ChartCard({ title, subtitle, children, table, right }: { title: 
     </section>
   );
 }
+
+/* ---------- Linien-Diagramm (kumuliert) ---------- */
+
+export const PALETTES = {
+  dark: { series: '#3987e5', compare: '#8d8c86', grid: 'rgba(255,255,255,0.08)', axis: 'rgba(255,255,255,0.18)', text: '#f0efec', textSecondary: '#c3c2b7', textMuted: '#8d8c86', surface: '#0f1420' },
+  light: { series: '#2a78d6', compare: '#8a8984', grid: '#e7e6e2', axis: '#c9c8c3', text: '#0b0b0b', textSecondary: '#52514e', textMuted: '#77766f', surface: '#ffffff' },
+} as const;
+
+export interface LineSeries {
+  id: string;
+  label: string;
+  /** Primäre Serie bekommt Flächenfüllung, Endpunkt & Direktlabel */
+  primary?: boolean;
+  values: number[];
+}
+
+export function LineChart({
+  series,
+  labels,
+  format,
+  ariaLabel,
+  height = 280,
+  palette = 'dark',
+  tooltipExtra,
+}: {
+  series: LineSeries[];
+  labels: string[];
+  format: (v: number) => string;
+  ariaLabel: string;
+  height?: number;
+  palette?: keyof typeof PALETTES;
+  tooltipExtra?: (index: number) => string | undefined;
+}) {
+  const P = PALETTES[palette];
+  const { ref, w } = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const n = labels.length;
+  const padL = 56;
+  const padR = 18;
+  const padT = 22;
+  const padB = 28;
+  const innerW = Math.max(0, w - padL - padR);
+  const innerH = height - padT - padB;
+  const max = Math.max(0, ...series.flatMap((s) => s.values));
+  const ticks = niceTicks(max);
+  const top = ticks[ticks.length - 1] || 1;
+  const x = (i: number) => padL + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+  const y = (v: number) => padT + innerH - (v / top) * innerH;
+  const path = (vals: number[]) => vals.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const primary = series.find((s) => s.primary) ?? series[0];
+  const lastIdx = n - 1;
+  const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(innerW / 70))));
+  const gradId = useId().replace(/:/g, '');
+  const color = (s: LineSeries) => (s.primary ? P.series : P.compare);
+
+  const onMove = (clientX: number, rect: DOMRect) => {
+    const rel = clientX - rect.left - padL;
+    const i = Math.round((rel / Math.max(1, innerW)) * (n - 1));
+    setHover(Math.max(0, Math.min(n - 1, i)));
+  };
+
+  return (
+    <div>
+      {series.length > 1 && (
+        <ul className="mb-3 flex flex-wrap gap-4 text-xs" aria-label="Legende" style={{ color: P.textSecondary }}>
+          {series.map((s) => (
+            <li key={s.id} className="flex items-center gap-2">
+              <span className="inline-block h-0.5 w-5 rounded" style={{ background: color(s), height: 2 }} />
+              {s.label}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div ref={ref} className="relative" style={{ height }}>
+        {w > 0 && n > 0 && (
+          <svg
+            width={w}
+            height={height}
+            role="img"
+            aria-label={ariaLabel}
+            tabIndex={0}
+            className="outline-none focus-visible:ring-2 focus-visible:ring-sky-400/40"
+            onMouseMove={(e) => onMove(e.clientX, e.currentTarget.getBoundingClientRect())}
+            onMouseLeave={() => setHover(null)}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowRight') setHover((h) => Math.min(n - 1, (h ?? -1) + 1));
+              if (e.key === 'ArrowLeft') setHover((h) => Math.max(0, (h ?? n) - 1));
+              if (e.key === 'Escape') setHover(null);
+            }}
+            onBlur={() => setHover(null)}
+          >
+            <defs>
+              <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor={P.series} stopOpacity={0.18} />
+                <stop offset="100%" stopColor={P.series} stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            {ticks.map((t) => (
+              <g key={t}>
+                <line x1={padL} x2={w - padR} y1={y(t)} y2={y(t)} stroke={P.grid} strokeWidth={1} />
+                <text x={padL - 8} y={y(t)} dy="0.32em" textAnchor="end" fontSize={11} fill={P.textMuted}>
+                  {format(t)}
+                </text>
+              </g>
+            ))}
+            {labels.map((l, i) =>
+              i % every === 0 || i === lastIdx ? (
+                <text key={i} x={x(i)} y={height - 8} textAnchor={i === 0 ? 'start' : i === lastIdx ? 'end' : 'middle'} fontSize={11} fill={P.textMuted}>
+                  {l}
+                </text>
+              ) : null,
+            )}
+            <line x1={padL} x2={w - padR} y1={padT + innerH} y2={padT + innerH} stroke={P.axis} strokeWidth={1} />
+            {/* Fläche nur unter der primären Serie */}
+            <path d={`${path(primary.values)} L${x(lastIdx)},${padT + innerH} L${x(0)},${padT + innerH} Z`} fill={`url(#${gradId})`} />
+            {series
+              .filter((s) => !s.primary)
+              .map((s) => (
+                <path key={s.id} d={path(s.values)} fill="none" stroke={color(s)} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" opacity={0.85} />
+              ))}
+            <path d={path(primary.values)} fill="none" stroke={P.series} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+            {/* Endpunkt mit Ring in Oberflächenfarbe + Direktlabel */}
+            <circle cx={x(lastIdx)} cy={y(primary.values[lastIdx])} r={5} fill={P.series} stroke={P.surface} strokeWidth={2} />
+            <text x={x(lastIdx) - 8} y={y(primary.values[lastIdx]) - 12} textAnchor="end" fontSize={12} fontWeight={700} fill={P.text}>
+              {format(primary.values[lastIdx])}
+            </text>
+            {hover !== null && (
+              <g>
+                <line x1={x(hover)} x2={x(hover)} y1={padT} y2={padT + innerH} stroke={P.axis} strokeWidth={1} />
+                {series.map((s) => (
+                  <circle key={s.id} cx={x(hover)} cy={y(s.values[hover])} r={4.5} fill={color(s)} stroke={P.surface} strokeWidth={2} />
+                ))}
+              </g>
+            )}
+          </svg>
+        )}
+        {hover !== null && (
+          <div
+            role="tooltip"
+            className="pointer-events-none absolute top-2 z-10 min-w-40 rounded-xl border px-3 py-2 text-xs shadow-xl"
+            style={{
+              left: Math.min(Math.max(x(hover) + 12, 0), Math.max(0, w - 190)),
+              background: palette === 'dark' ? 'rgba(11,15,24,0.95)' : '#ffffff',
+              borderColor: palette === 'dark' ? 'rgba(255,255,255,0.1)' : '#e7e6e2',
+            }}
+          >
+            <p className="font-semibold" style={{ color: P.text }}>
+              {labels[hover]}
+            </p>
+            {series.map((s) => (
+              <p key={s.id} className="mt-0.5 flex items-center gap-1.5" style={{ color: P.textSecondary }}>
+                <span className="inline-block h-2 w-2 rounded-full" style={{ background: color(s) }} />
+                {s.label}: <b style={{ color: P.text }}>{format(s.values[hover])}</b>
+              </p>
+            ))}
+            {tooltipExtra?.(hover) && <p style={{ color: P.textMuted }}>{tooltipExtra(hover)}</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

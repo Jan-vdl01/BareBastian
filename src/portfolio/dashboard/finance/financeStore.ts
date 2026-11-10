@@ -370,3 +370,113 @@ export function loadSampleData(userId: string) {
     });
   }
 }
+
+/* ---------- Erweiterte Auswertung ---------- */
+
+export interface CumulativePoint {
+  /** Tag im Zeitraum (0-basiert) */
+  index: number;
+  label: string;
+  date: string;
+  /** kumulierter Verdienst */
+  value: number;
+  /** Tokens an diesem Tag */
+  dayTokens: number;
+}
+
+/** Kumulierter Verdienst Tag für Tag im Zeitraum (Monate bei sehr langen Zeiträumen). */
+export function cumulative(list: StreamEntry[], from: string, days: number, s: FinanceSettings): CumulativePoint[] {
+  const byDay = new Map<string, number>();
+  for (const x of list) byDay.set(x.date, (byDay.get(x.date) ?? 0) + x.tokens);
+  const out: CumulativePoint[] = [];
+  let acc = 0;
+  const start = new Date(`${from}T12:00:00`);
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const key = iso(d);
+    const t = byDay.get(key) ?? 0;
+    acc += earnings(t, s);
+    out.push({ index: i, date: key, label: d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: days > 366 ? '2-digit' : undefined }), value: acc, dayTokens: t });
+  }
+  return out;
+}
+
+export interface ExtraStats {
+  avgDuration: number;
+  medianTokens: number;
+  longestStreak: number;
+  streamsPerWeek: number;
+  activeWeeksShare: number;
+  tokensPerFollower: number;
+  projectedMonthTokens: number | null;
+  bestHourBlock: { label: string; tokensPerHour: number } | null;
+  bestStream: StreamEntry | null;
+}
+
+export function extraStats(list: StreamEntry[], period: Period, all: StreamEntry[], now = new Date()): ExtraStats {
+  const sorted = [...list].map((x) => x.tokens).sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length ? (sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2) : 0;
+  // längste Serie aufeinanderfolgender Stream-Tage
+  const days = [...new Set(list.map((x) => x.date))].sort();
+  let longest = 0;
+  let run = 0;
+  let prev: Date | null = null;
+  for (const d of days) {
+    const cur = new Date(`${d}T12:00:00`);
+    run = prev && Math.round((cur.getTime() - prev.getTime()) / 86400000) === 1 ? run + 1 : 1;
+    longest = Math.max(longest, run);
+    prev = cur;
+  }
+  // Anteil Wochen mit mind. einem Stream
+  const weeks = Math.max(1, Math.ceil(period.days / 7));
+  const weekKeys = new Set(list.map((x) => Math.floor((new Date(`${x.date}T12:00:00`).getTime() - new Date(`${period.from}T12:00:00`).getTime()) / (7 * 86400000))));
+  const followers = list.reduce((a, x) => a + (x.followers || 0), 0);
+  const tokens = list.reduce((a, x) => a + x.tokens, 0);
+  // Hochrechnung für den laufenden Monat (auf Basis aller Daten des Monats)
+  const monthStart = iso(new Date(now.getFullYear(), now.getMonth(), 1));
+  const monthTokens = all.filter((x) => x.date >= monthStart && x.date <= iso(now)).reduce((a, x) => a + x.tokens, 0);
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const projected = now.getDate() >= 3 ? Math.round((monthTokens / now.getDate()) * daysInMonth) : null;
+  // bester Startzeit-Block (3 Stunden) nach Tokens/Std.
+  const blocks = startTimeBlocks(list).filter((b) => b.minutes >= 60);
+  const best = [...blocks].sort((a, b) => b.tokensPerHour - a.tokensPerHour)[0];
+  return {
+    avgDuration: list.length ? list.reduce((a, x) => a + x.durationMin, 0) / list.length : 0,
+    medianTokens: median,
+    longestStreak: longest,
+    streamsPerWeek: list.length / (period.days / 7),
+    activeWeeksShare: Math.min(1, weekKeys.size / weeks),
+    tokensPerFollower: followers ? tokens / followers : 0,
+    projectedMonthTokens: projected,
+    bestHourBlock: best ? { label: best.label, tokensPerHour: best.tokensPerHour } : null,
+    bestStream: list.length ? list.reduce((m, x) => (x.tokens > m.tokens ? x : m), list[0]) : null,
+  };
+}
+
+/** Tokens pro Stunde nach Startzeit (Blöcke à 3 Stunden). */
+export function startTimeBlocks(list: StreamEntry[]) {
+  const blocks = Array.from({ length: 8 }, (_, i) => ({ label: `${String(i * 3).padStart(2, '0')}–${String(i * 3 + 3).padStart(2, '0')} Uhr`, tokens: 0, minutes: 0, streams: 0, tokensPerHour: 0 }));
+  for (const x of list) {
+    if (!/^\d{2}:\d{2}$/.test(x.start)) continue;
+    const b = blocks[Math.floor(Number(x.start.slice(0, 2)) / 3)];
+    b.tokens += x.tokens;
+    b.minutes += x.durationMin;
+    b.streams += 1;
+  }
+  return blocks.map((b) => ({ ...b, tokensPerHour: b.minutes ? b.tokens / (b.minutes / 60) : 0 }));
+}
+
+/** Verteilung der Streams nach Token-Spannen. */
+export function tokenDistribution(list: StreamEntry[]) {
+  if (!list.length) return [];
+  const max = Math.max(...list.map((x) => x.tokens));
+  const raw = Math.max(1, max / 6);
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((v) => v >= raw) ?? raw;
+  const n = Math.max(1, Math.ceil((max + 1) / step));
+  const buckets = Array.from({ length: n }, (_, i) => ({ label: `${num(i * step)}–${num((i + 1) * step - 1)}`, count: 0 }));
+  for (const x of list) buckets[Math.min(n - 1, Math.floor(x.tokens / step))].count += 1;
+  return buckets;
+}

@@ -2,12 +2,16 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import { useAuth } from '../../auth/AuthContext';
 import { AlertIcon, CheckIcon, ChevronDown, DownloadIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon, UploadIcon, XIcon } from '../../icons';
 import { downloadBlob } from '../../lib/download';
-import { BarList, ChartCard, ColumnChart } from './charts';
+import { BarList, ChartCard, ColumnChart, LineChart } from './charts';
 import {
   byCategory,
   byToy,
   byWeekday,
   clearFinance,
+  cumulative,
+  extraStats,
+  startTimeBlocks,
+  tokenDistribution,
   compact,
   deleteStreams,
   duration,
@@ -293,6 +297,11 @@ export function FinanceDashboard() {
   const toys = useMemo(() => byToy(current), [current]);
   const weekdays = useMemo(() => byWeekday(current), [current]);
   const top = useMemo(() => [...current].sort((a, b) => b.tokens - a.tokens).slice(0, 5), [current]);
+  const cum = useMemo(() => cumulative(current, period.from, period.days, s), [current, period, s]);
+  const cumPrev = useMemo(() => (previous && period.prevFrom ? cumulative(previous, period.prevFrom, period.days, s) : null), [previous, period, s]);
+  const extra = useMemo(() => extraStats(current, period, data.streams), [current, period, data.streams]);
+  const blocks = useMemo(() => startTimeBlocks(current).filter((b) => b.streams), [current]);
+  const dist = useMemo(() => tokenDistribution(current), [current]);
 
   const monthPeriod = periodFor('month', data.streams);
   const monthTokens = data.streams.filter((x) => inPeriod(x, monthPeriod.from, monthPeriod.to)).reduce((a, x) => a + x.tokens, 0);
@@ -327,9 +336,14 @@ export function FinanceDashboard() {
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <FinanceNav active="overview" />
-        <button type="button" onClick={() => setForm(true)} className="mb-5 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-900/40">
-          <PlusIcon size={16} /> Stream eintragen
-        </button>
+        <div className="mb-5 flex flex-wrap gap-2">
+          <a href={`#/abo-bereich/finanzen/bericht?range=${range}`} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm text-slate-200 hover:bg-white/5">
+            <DownloadIcon size={16} /> PDF-Bericht
+          </a>
+          <button type="button" onClick={() => setForm(true)} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-900/40">
+            <PlusIcon size={16} /> Stream eintragen
+          </button>
+        </div>
       </div>
 
       <div className="mb-5 flex gap-2 overflow-x-auto pb-1" role="radiogroup" aria-label="Zeitraum">
@@ -372,6 +386,25 @@ export function FinanceDashboard() {
           </div>
         </section>
       )}
+
+      <div className="mt-4">
+        <ChartCard
+          title="Gesamteinnahmen im Verlauf"
+          subtitle={`Kumuliert · ${money(cum[cum.length - 1]?.value ?? 0, s)} im Zeitraum${cumPrev ? ` · Vorperiode ${money(cumPrev[cumPrev.length - 1]?.value ?? 0, s)}` : ''}`}
+          table={{ head: ['Datum', 'Tokens am Tag', 'Kumuliert'], rows: cum.filter((c) => c.dayTokens).map((c) => [formatDay(c.date), num(c.dayTokens), money(c.value, s)]) }}
+        >
+          <LineChart
+            ariaLabel="Kumulierte Einnahmen im Zeitraum"
+            labels={cum.map((c) => c.label)}
+            format={(v) => money(v, s)}
+            series={[
+              { id: 'now', label: 'Dieser Zeitraum', primary: true, values: cum.map((c) => c.value) },
+              ...(cumPrev ? [{ id: 'prev', label: 'Vorperiode', values: cumPrev.map((c) => c.value) }] : []),
+            ]}
+            tooltipExtra={(i) => (cum[i]?.dayTokens ? `+${num(cum[i].dayTokens)} Tokens an diesem Tag` : 'Kein Stream an diesem Tag')}
+          />
+        </ChartCard>
+      </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -461,6 +494,43 @@ export function FinanceDashboard() {
             {!top.length && <li className="py-6 text-center text-sm text-slate-500">Keine Streams im Zeitraum.</li>}
           </ol>
         </section>
+      </div>
+
+      <section className="mt-4 rounded-2xl border border-white/10 bg-slate-900/50 p-5" aria-labelledby="more-stats">
+        <h3 id="more-stats" className="font-oswald text-lg tracking-wide text-white">
+          Weitere Statistiken
+        </h3>
+        <dl className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[
+            ['Ø Stream-Länge', duration(Math.round(extra.avgDuration)), 'pro Stream'],
+            ['Median Tokens', num(extra.medianTokens), 'typischer Stream'],
+            ['Streams pro Woche', num(extra.streamsPerWeek, 1), `${num(extra.activeWeeksShare * 100)} % der Wochen aktiv`],
+            ['Längste Serie', `${extra.longestStreak} Tag${extra.longestStreak === 1 ? '' : 'e'}`, 'am Stück gestreamt'],
+            ['Beste Startzeit', extra.bestHourBlock?.label ?? '–', extra.bestHourBlock ? `${num(extra.bestHourBlock.tokensPerHour)} Tokens/Std.` : 'mind. 1 Std. Daten nötig'],
+            ['Tokens pro Follower', extra.tokensPerFollower ? num(extra.tokensPerFollower, 1) : '–', 'Tokens je neuem Follower'],
+            ['Hochrechnung Monat', extra.projectedMonthTokens !== null ? `${num(extra.projectedMonthTokens)} TK` : '–', extra.projectedMonthTokens !== null ? `≈ ${money(earnings(extra.projectedMonthTokens, s), s)} bis Monatsende` : 'ab dem 3. Tag des Monats'],
+            ['Bester Stream', extra.bestStream ? `${num(extra.bestStream.tokens)} TK` : '–', extra.bestStream ? `${formatDay(extra.bestStream.date)} · ${extra.bestStream.category}` : ''],
+          ].map(([k, v, sub]) => (
+            <div key={k} className="rounded-xl bg-white/[0.04] p-3">
+              <dt className="text-[11px] uppercase tracking-wider text-slate-500">{k}</dt>
+              <dd className="mt-1 text-lg font-semibold tabular-nums text-white">{v}</dd>
+              <dd className="text-xs text-slate-400">{sub}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <ChartCard title="Tokens pro Stunde nach Startzeit" subtitle="Nur Streams mit eingetragener Startzeit" table={{ head: ['Startzeit', 'Tokens/Std.', 'Streams'], rows: blocks.map((b) => [b.label, num(b.tokensPerHour), b.streams]) }}>
+          {blocks.length ? (
+            <ColumnChart ariaLabel="Tokens pro Stunde nach Startzeit" height={210} format={(v) => `${num(v)} TK/h`} data={blocks.map((b) => ({ label: b.label.replace(' Uhr', ''), value: Math.round(b.tokensPerHour), details: [`${b.streams} Streams · ${duration(b.minutes)}`] }))} />
+          ) : (
+            <p className="py-8 text-center text-sm text-slate-500">Trage Startzeiten ein, um diese Auswertung zu sehen.</p>
+          )}
+        </ChartCard>
+        <ChartCard title="Verteilung der Streams" subtitle="Anzahl Streams je Token-Spanne" table={{ head: ['Tokens', 'Streams'], rows: dist.map((d) => [d.label, d.count]) }}>
+          <ColumnChart ariaLabel="Anzahl Streams je Token-Spanne" height={210} format={(v) => `${num(v)} Streams`} data={dist.map((d) => ({ label: d.label, value: d.count }))} />
+        </ChartCard>
       </div>
 
       {form && <StreamForm data={data} onClose={() => setForm(false)} />}
