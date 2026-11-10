@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { PROFILE } from '../data';
-import { ArrowLeft, ChatIcon, CrownIcon, HomeIcon, LibraryIcon, LogoutIcon, Shield, UserIcon, WandIcon, type IconComponent } from '../icons';
+import { ArrowLeft, ChartIcon, ChatIcon, CrownIcon, HomeIcon, LibraryIcon, LogoutIcon, Shield, UserIcon, WandIcon, type IconComponent } from '../icons';
 import { navigate } from '../router';
 import { AdminBadge } from './admin/AdminUI';
 import { useUnreadCount } from './chat/chatStore';
@@ -20,6 +20,7 @@ export const DASHBOARD_NAV: DashboardNavItem[] = [
   { path: '/abo-bereich/bibliothek', label: 'Bibliothek', short: 'Bibliothek', icon: LibraryIcon },
   { path: '/abo-bereich/chat', label: 'Nachrichten', short: 'Chat', icon: ChatIcon },
   { path: '/abo-bereich/bio-designer', label: 'Bio-Designer', short: 'Bio', icon: WandIcon },
+  { path: '/abo-bereich/finanzen', label: 'Finanzen', short: 'Finanzen', icon: ChartIcon },
   { path: '/abo-bereich/profil', label: 'Mein Profil', short: 'Profil', icon: UserIcon },
   { path: '/abo-bereich/verwaltung', label: 'Verwaltung', short: 'Admin', icon: Shield, adminOnly: true },
 ];

@@ -1,6 +1,6 @@
 import { useAuth } from '../auth/AuthContext';
 import { getPlan } from '../config/plans';
-import { ArrowRight, CrownIcon, ImageIcon, LibraryIcon, PlayIcon, PostIcon, WandIcon } from '../icons';
+import { ArrowRight, ChartIcon, CrownIcon, ImageIcon, LibraryIcon, PlayIcon, PostIcon, WandIcon } from '../icons';
 import { useContent } from '../content/ContentContext';
 import { formatDate, placeholderGradient } from './libraryData';
 import { VideoThumb } from './MediaViewer';
@@ -132,6 +132,14 @@ export function DashboardHome() {
               <p className="text-sm text-slate-400">Bio aus Modulen zusammenstellen</p>
             </div>
             <ArrowRight size={18} className="text-slate-500 transition-all group-hover:translate-x-1 group-hover:text-violet-300" />
+          </a>
+          <a href="#/abo-bereich/finanzen" className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-gradient-to-br from-sky-600/20 to-blue-700/10 p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-sky-400/40">
+            <span className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 text-white"><ChartIcon size={20} /></span>
+            <div className="flex-1">
+              <p className="font-medium text-white">Finanz-Tool</p>
+              <p className="text-sm text-slate-400">Tokens & Einnahmen pro Stream auswerten</p>
+            </div>
+            <ArrowRight size={18} className="text-slate-500 transition-all group-hover:translate-x-1 group-hover:text-sky-300" />
           </a>
           <a href="#/abo-bereich/bibliothek?tab=fotos" className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-slate-900/50 p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-400/30">
             <span className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 text-white"><LibraryIcon size={20} /></span>

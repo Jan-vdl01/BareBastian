@@ -20,6 +20,7 @@ import { AdminPage } from './dashboard/admin/AdminPage';
 import { ChatPage } from './dashboard/chat/ChatPage';
 import { ProfilePage } from './dashboard/profile/ProfilePage';
 import { ContentProvider } from './content/ContentContext';
+import { FinanceDashboard, FinanceSettingsPage, FinanceStreams } from './dashboard/finance/FinancePages';
 import { MailIcon, XIcon } from './icons';
 import { PricingPage } from './pages/PricingPage';
 import { SubscribePage } from './pages/SubscribePage';
@@ -31,6 +32,9 @@ const DASHBOARD_PAGES: Record<string, { title: string; subtitle: string; adminOn
   '/abo-bereich/chat': { title: 'Nachrichten', subtitle: 'Schreib mit anderen Mitgliedern und mit BAREBASTIAN' },
   '/abo-bereich/bio-designer': { title: 'Chaturbate-Bio-Designer', subtitle: 'Deine Profile & die Theme-Galerie' },
   '/abo-bereich/bio-designer/edit': { title: 'Bio-Designer', subtitle: 'Baue deine Bio aus Modulen – Chaturbate-kompatibel als Einzeiler' },
+  '/abo-bereich/finanzen': { title: 'Finanzen', subtitle: 'Einnahmen pro Stream auswerten' },
+  '/abo-bereich/finanzen/streams': { title: 'Finanzen · Streams', subtitle: 'Alle Einträge ansehen, bearbeiten & löschen' },
+  '/abo-bereich/finanzen/einstellungen': { title: 'Finanzen · Einstellungen', subtitle: 'Token-Wert, Währung, Kategorien & Toys' },
   '/abo-bereich/profil': { title: 'Profil', subtitle: 'Wie dich andere Mitglieder sehen' },
   '/abo-bereich/konto': { title: 'Konto & Abo', subtitle: 'Konto und Mitgliedschaft verwalten' },
   '/abo-bereich/verwaltung': { title: 'Verwaltung', subtitle: 'Inhalte veröffentlichen & Mitglieder', adminOnly: true },
@@ -102,6 +106,9 @@ function Router() {
         {route.path === '/abo-bereich/bio-designer' && <BioHubPage />}
         {route.path === '/abo-bereich/bio-designer/edit' && <BioBuilderPage projectId={route.query.get('p')} />}
         {route.path === '/abo-bereich/chat' && <ChatPage query={route.query} />}
+        {route.path === '/abo-bereich/finanzen' && <FinanceDashboard />}
+        {route.path === '/abo-bereich/finanzen/streams' && <FinanceStreams />}
+        {route.path === '/abo-bereich/finanzen/einstellungen' && <FinanceSettingsPage />}
         {route.path === '/abo-bereich/profil' && <ProfilePage query={route.query} />}
         {route.path === '/abo-bereich/konto' && <AccountPage />}
         {route.path === '/abo-bereich/verwaltung' && isAdmin && <AdminPage />}

@@ -96,3 +96,4 @@ export const MapPinIcon = stroke(<><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5
 export const LinkIcon = stroke(<><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" /><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" /></>, 'LinkIcon');
 export const CalendarIcon = stroke(<><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>, 'CalendarIcon');
 export const VerifiedIcon = fill(<path d="M12 1.5 14.6 3.4l3.2-.2.9 3.1 2.7 1.8-1 3 1 3-2.7 1.8-.9 3.1-3.2-.2L12 22.5l-2.6-1.9-3.2.2-.9-3.1-2.7-1.8 1-3-1-3 2.7-1.8.9-3.1 3.2.2Zm-1.2 13.9 5.6-5.6-1.4-1.4-4.2 4.2-2-2-1.4 1.4Z" />, 'VerifiedIcon');
+export const ChartIcon = stroke(<><path d="M3 3v18h18" /><path d="M7 15v3M11.5 10v8M16 13v5M20.5 6v12" /></>, 'ChartIcon');

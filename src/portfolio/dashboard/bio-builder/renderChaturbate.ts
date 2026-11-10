@@ -101,7 +101,7 @@ function heading(ctx: Ctx, m: BioModule, emoji = '') {
         color: ctx.t.eyebrowText,
         background: ctx.t.eyebrowBg,
         border: ctx.t.eyebrowBorder,
-        borderRadius: '6px',
+        borderRadius: ctx.t.eyebrowRadius ?? '6px',
         padding: '4px 12px',
         margin: '0 0 10px 0',
         fontFamily: ctx.font,
@@ -119,10 +119,11 @@ function heading(ctx: Ctx, m: BioModule, emoji = '') {
         fontSize: `${s.titleSize ?? 24}px`,
         lineHeight: '1.2',
         fontWeight: '800',
-        fontStyle: s.titleItalic ? 'italic' : 'normal',
+        fontStyle: s.titleItalic ? 'italic' : ctx.t.titleStyle ?? 'normal',
         textDecoration: decoration,
-        textTransform: s.titleUppercase ? 'uppercase' : undefined,
-        letterSpacing: s.titleUppercase ? '1px' : undefined,
+        textTransform: s.titleUppercase ? 'uppercase' : ctx.t.titleTransform,
+        letterSpacing: s.titleUppercase ? '1px' : ctx.t.titleLetterSpacing,
+        textShadow: ctx.t.titleShadow,
         color: ctx.t.heading,
         margin: '0 0 6px 0',
       },
@@ -135,7 +136,7 @@ function heading(ctx: Ctx, m: BioModule, emoji = '') {
 }
 
 const pill = (ctx: Ctx, content: string, extra: Css = {}) =>
-  tag('i', { display: 'inline-block', fontStyle: 'normal', fontWeight: 'bold', background: ctx.t.pillBg, color: ctx.t.pillText, borderRadius: '6px', padding: '2px 9px', fontSize: '12px', whiteSpace: 'nowrap', ...extra }, content);
+  tag('i', { display: 'inline-block', fontStyle: 'normal', fontWeight: 'bold', background: ctx.t.pillBg, color: ctx.t.pillText, borderRadius: ctx.t.pillRadius ?? '6px', padding: '2px 9px', fontSize: '12px', whiteSpace: 'nowrap', ...extra }, content);
 
 /** Zeile mit rechtsbündigem Wert (Float vor dem Text, damit es im Fluss funktioniert). */
 function row(ctx: Ctx, left: string, right: string, opts: { link?: string; strong?: boolean; width?: string; highlight?: boolean } = {}) {
@@ -152,7 +153,7 @@ function row(ctx: Ctx, left: string, right: string, opts: { link?: string; stron
     margin: opts.width ? '3px' : '0 0 6px 0',
     background: opts.highlight ? `linear-gradient(90deg,${rgba(ctx.b, 0.55)},${rgba(ctx.a, 0.45)})` : ctx.t.innerBg,
     border: opts.highlight ? `1px solid ${ctx.a}` : ctx.t.innerBorder,
-    borderRadius: `${Math.round(ctx.r / 2)}px`,
+    borderRadius: `${ctx.t.innerRadius ?? Math.round(ctx.r / 2)}px`,
     overflow: 'hidden',
     color: ctx.t.text,
     fontSize: `${ctx.style.fontSize ?? 15}px`,
@@ -531,6 +532,7 @@ export function renderBio(project: BioProject): string {
         display: 'block',
         maxWidth: `${MAX_WIDTH}px`,
         margin: joined ? '0 auto 0 auto' : '0 auto 16px auto',
+        transform: ctx.t.tilt && !joined && !isDivider ? `rotate(${i % 2 ? -ctx.t.tilt : ctx.t.tilt}deg)` : undefined,
         boxSizing: 'border-box',
         padding: `${pad}px ${pad + 2}px`,
         background,
