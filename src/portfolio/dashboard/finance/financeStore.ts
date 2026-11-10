@@ -1,7 +1,9 @@
 /**
  * Finanz-Tool: Einnahmen pro Stream (Demo: localStorage, pro Benutzer getrennt).
  */
-import { readJSON, uid, useStoredValue, writeJSON } from '../../lib/localStore';
+import { uid } from '../../lib/localStore';
+import { csvRowSchema, financeSchema } from '../../lib/schemas';
+import { defineUserStore, describeIssues } from '../../lib/store';
 
 export interface StreamEntry {
   id: string;
@@ -40,8 +42,6 @@ export interface FinanceData {
 export const DEFAULT_CATEGORIES = ['Public Show', 'Private Show', 'Spy Show', 'Ticket-/Gruppenshow', 'Fan-Club', 'Cam2Cam'];
 export const DEFAULT_TOYS = ['Lovense Edge 2', 'Lovense Solace Pro', 'Fuck-Machine', 'Lovense Lush', 'Dildo', 'Kein Toy'];
 
-const key = (userId: string) => `bb_finance_${userId}`;
-
 const empty = (): FinanceData => ({
   version: 1,
   settings: { payoutPerToken: 0.05, currency: 'USD', usdToEur: 0.92, monthlyGoal: 0 },
@@ -50,17 +50,20 @@ const empty = (): FinanceData => ({
   streams: [],
 });
 
-export function readFinance(userId: string): FinanceData {
-  const d = readJSON<FinanceData | null>(key(userId), null);
-  return d?.version === 1 ? { ...empty(), ...d, settings: { ...empty().settings, ...d.settings } } : empty();
-}
+/** Validierter Speicher pro Benutzer (fehlende Einstellungen werden ergänzt). */
+const financeStore = defineUserStore<FinanceData>('bb_finance_', {
+  schema: financeSchema,
+  fallback: empty,
+  migrate: (raw) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const d = raw as Partial<FinanceData>;
+    return { ...empty(), ...d, settings: { ...empty().settings, ...(d.settings ?? {}) } };
+  },
+});
 
-export function useFinance(userId: string): FinanceData {
-  const d = useStoredValue<FinanceData | null>(key(userId), null);
-  return d?.version === 1 ? { ...empty(), ...d, settings: { ...empty().settings, ...d.settings } } : empty();
-}
-
-const update = (userId: string, fn: (d: FinanceData) => FinanceData) => writeJSON(key(userId), fn(readFinance(userId)));
+export const readFinance = (userId: string) => financeStore.forUser(userId).read();
+export const useFinance = (userId: string) => financeStore.use(userId);
+const update = (userId: string, fn: (d: FinanceData) => FinanceData) => financeStore.forUser(userId).update(fn);
 
 export type StreamInput = Omit<StreamEntry, 'id' | 'createdAt' | 'updatedAt'>;
 
@@ -82,7 +85,7 @@ export const deleteStreams = (userId: string, ids: string[]) => update(userId, (
 export const updateSettings = (userId: string, patch: Partial<FinanceSettings>) => update(userId, (d) => ({ ...d, settings: { ...d.settings, ...patch } }));
 export const setCategories = (userId: string, categories: string[]) => update(userId, (d) => ({ ...d, categories }));
 export const setToys = (userId: string, toys: string[]) => update(userId, (d) => ({ ...d, toys }));
-export const clearFinance = (userId: string) => writeJSON(key(userId), empty());
+export const clearFinance = (userId: string) => financeStore.forUser(userId).write(empty());
 
 /* ---------- Formatierung ---------- */
 
@@ -312,37 +315,47 @@ function parseCsvLine(line: string): string[] {
 
 const fingerprint = (x: { date: string; start: string; durationMin: number; tokens: number; category: string }) => `${x.date}|${x.start}|${x.durationMin}|${x.tokens}|${x.category}`;
 
-/** Importiert eine mit diesem Tool exportierte CSV-Datei. Bereits vorhandene Einträge werden übersprungen. */
-export function importCsv(userId: string, text: string): { added: number; skipped: number } {
-  const known = new Set(readFinance(userId).streams.map(fingerprint));
-  let skipped = 0;
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim());
+export interface CsvImportResult {
+  added: number;
+  skipped: number;
+  invalid: number;
+  errors: string[];
+}
+
+/** Importiert eine mit diesem Tool exportierte CSV-Datei. Jede Zeile wird geprüft; vorhandene Einträge werden übersprungen. */
+export function importCsv(userId: string, text: string): CsvImportResult {
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim());
   if (!lines.length || !lines[0].startsWith('Datum')) throw new Error('Unbekanntes Format – bitte eine aus dem Finanz-Tool exportierte CSV-Datei verwenden.');
-  let n = 0;
-  for (const line of lines.slice(1)) {
+  const known = new Set(readFinance(userId).streams.map(fingerprint));
+  const result: CsvImportResult = { added: 0, skipped: 0, invalid: 0, errors: [] };
+  lines.slice(1).forEach((line, i) => {
     const [date, start, dur, tokens, category, toys, followers, notes] = parseCsvLine(line);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? '')) continue;
-    const entry = {
-      date,
-      start: /^\d{2}:\d{2}$/.test(start ?? '') ? start : '',
-      durationMin: Math.max(0, Number(dur) || 0),
-      tokens: Math.max(0, Math.round(Number(tokens) || 0)),
+    const parsed = csvRowSchema.safeParse({
+      date: (date ?? '').trim(),
+      start: (start ?? '').trim(),
+      durationMin: Number(dur),
+      tokens: Number(tokens),
       category: (category ?? '').trim(),
       toys: (toys ?? '').split(',').map((t) => t.trim()).filter(Boolean),
-      followers: Math.max(0, Math.round(Number(followers) || 0)),
+      followers: Number(followers || 0),
       notes: notes ?? '',
-    };
-    const fp = fingerprint(entry);
+    });
+    if (!parsed.success) {
+      result.invalid++;
+      if (result.errors.length < 5) result.errors.push(`Zeile ${i + 2}: ${describeIssues(parsed.error)}`);
+      return;
+    }
+    const fp = fingerprint(parsed.data);
     if (known.has(fp)) {
-      skipped++;
-      continue;
+      result.skipped++;
+      return;
     }
     known.add(fp);
-    saveStream(userId, entry);
-    n++;
-  }
-  if (!n && !skipped) throw new Error('Keine gültigen Zeilen gefunden.');
-  return { added: n, skipped };
+    saveStream(userId, parsed.data);
+    result.added++;
+  });
+  if (!result.added && !result.skipped && !result.invalid) throw new Error('Keine Datenzeilen gefunden.');
+  return result;
 }
 
 /* ---------- Beispieldaten ---------- */

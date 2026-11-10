@@ -1,4 +1,7 @@
-import { useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { EditorContent, useEditor } from '@tiptap/react';
+import { bbcodeToHtml, jsonToBbcode } from './editor/bbcode';
+import { editorExtensions } from './editor/extensions';
 import { ChevronDown, PlusIcon, SparkleIcon, TrashIcon, XIcon } from '../../icons';
 import { uid } from '../../lib/localStore';
 import { isHttpsUrl } from './renderChaturbate';
@@ -61,92 +64,147 @@ export function ColorPick({ value, onChange, label, fallback = '#ffffff' }: { va
   );
 }
 
-/* ---------- Rich-Text-Feld mit Werkzeugleiste ---------- */
+/* ---------- Rich-Text-Editor (TipTap, WYSIWYG) ---------- */
 
 const QUICK_EMOJIS = ['🔥', '💎', '👑', '❤️', '✨', '🎁', '⚡', '🎯', '💬', '🎉', '💋', '🌈'];
+const SIZES = [11, 13, 15, 18, 22, 28, 36, 48];
 
-export function RichTextArea({ value, onChange, rows = 4, placeholder, id, maxLength = 3000 }: { value: string; onChange: (v: string) => void; rows?: number; placeholder?: string; id?: string; maxLength?: number }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+/**
+ * WYSIWYG-Editor: Formatierung sofort sichtbar.
+ * `value`/`onChange` nutzen weiterhin das Speicherformat ([b]…[/b] usw.).
+ */
+export function RichTextArea({ value, onChange, rows = 4, placeholder, id, maxLength = 3000, label = 'Text' }: { value: string; onChange: (v: string) => void; rows?: number; placeholder?: string; id?: string; maxLength?: number; label?: string }) {
+  const lastEmitted = useRef(value);
   const [color, setColor] = useState('#ff5a1f');
   const [mark, setMark] = useState('#ffe600');
   const [emojiOpen, setEmojiOpen] = useState(false);
 
-  const wrap = (open: string, close: string, placeholderText = 'Text') => {
-    const el = ref.current;
-    if (!el) return;
-    const { selectionStart: s, selectionEnd: e } = el;
-    const selected = value.slice(s, e) || placeholderText;
-    const next = value.slice(0, s) + open + selected + close + value.slice(e);
-    onChange(next.slice(0, maxLength));
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(s + open.length, s + open.length + selected.length);
-    });
-  };
-  const insert = (str: string) => {
-    const el = ref.current;
-    if (!el) return;
-    const { selectionStart: s, selectionEnd: e } = el;
-    onChange((value.slice(0, s) + str + value.slice(e)).slice(0, maxLength));
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(s + str.length, s + str.length);
-    });
-  };
+  const editor = useEditor({
+    extensions: editorExtensions,
+    content: bbcodeToHtml(value),
+    shouldRerenderOnTransaction: true,
+    editorProps: {
+      attributes: {
+        ...(id ? { id } : {}),
+        role: 'textbox',
+        'aria-multiline': 'true',
+        'aria-label': label,
+        class: 'bb-editor-content',
+        style: `min-height:${Math.max(2, rows) * 1.6}em`,
+      },
+    },
+    onUpdate: ({ editor: ed }) => {
+      const bb = jsonToBbcode(ed.getJSON()).slice(0, maxLength);
+      lastEmitted.current = bb;
+      onChange(bb);
+    },
+  });
 
-  const btn = 'grid h-8 min-w-8 place-items-center rounded-md px-1.5 text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white';
+  // Änderungen von außen (z. B. Textvorschlag) übernehmen
+  useEffect(() => {
+    if (!editor || value === lastEmitted.current) return;
+    lastEmitted.current = value;
+    editor.commands.setContent(bbcodeToHtml(value), { emitUpdate: false });
+  }, [value, editor]);
+
+  if (!editor) return null;
+  const chain = () => editor.chain().focus();
+  const btn = (active = false) => `grid h-8 min-w-8 place-items-center rounded-md px-1.5 text-sm transition-colors ${active ? 'bg-violet-500 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`;
+  const currentSize = (editor.getAttributes('textStyle').fontSize as string | undefined)?.replace('px', '') ?? '';
+  const isEmpty = editor.isEmpty;
+
   return (
     <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] focus-within:border-violet-400/60">
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-white/5 px-1.5 py-1" role="toolbar" aria-label="Textformatierung">
-        <button type="button" className={`${btn} font-bold`} onClick={() => wrap('[b]', '[/b]')} title="Fett" aria-label="Fett">B</button>
-        <button type="button" className={`${btn} italic`} onClick={() => wrap('[i]', '[/i]')} title="Kursiv" aria-label="Kursiv">I</button>
-        <button type="button" className={`${btn} underline`} onClick={() => wrap('[u]', '[/u]')} title="Unterstrichen" aria-label="Unterstrichen">U</button>
-        <button type="button" className={`${btn} line-through`} onClick={() => wrap('[s]', '[/s]')} title="Durchgestrichen" aria-label="Durchgestrichen">S</button>
-        <button type="button" className={`${btn} text-[11px] font-bold`} onClick={() => wrap('[gross]', '[/gross]')} title="Großbuchstaben" aria-label="Großbuchstaben">AA</button>
+      <div
+        className="flex flex-wrap items-center gap-0.5 border-b border-white/5 px-1.5 py-1"
+        role="toolbar"
+        aria-label="Textformatierung"
+        // Buttons nehmen dem Editor beim Klicken nicht den Fokus – Auswahl & Cursor bleiben erhalten
+        onMouseDown={(e) => {
+          if ((e.target as HTMLElement).closest('button')) e.preventDefault();
+        }}
+      >
+        <button type="button" className={btn()} onClick={() => chain().undo().run()} disabled={!editor.can().undo()} title="Rückgängig (Strg+Z)" aria-label="Rückgängig">
+          ↶
+        </button>
+        <button type="button" className={btn()} onClick={() => chain().redo().run()} disabled={!editor.can().redo()} title="Wiederholen (Strg+Y)" aria-label="Wiederholen">
+          ↷
+        </button>
+        <span className="mx-1 h-5 w-px bg-white/10" />
+        <button type="button" className={`${btn(editor.isActive('bold'))} font-bold`} onClick={() => chain().toggleBold().run()} aria-pressed={editor.isActive('bold')} title="Fett (Strg+B)" aria-label="Fett">
+          B
+        </button>
+        <button type="button" className={`${btn(editor.isActive('italic'))} italic`} onClick={() => chain().toggleItalic().run()} aria-pressed={editor.isActive('italic')} title="Kursiv (Strg+I)" aria-label="Kursiv">
+          I
+        </button>
+        <button type="button" className={`${btn(editor.isActive('underline'))} underline`} onClick={() => chain().toggleUnderline().run()} aria-pressed={editor.isActive('underline')} title="Unterstrichen (Strg+U)" aria-label="Unterstrichen">
+          U
+        </button>
+        <button type="button" className={`${btn(editor.isActive('strike'))} line-through`} onClick={() => chain().toggleStrike().run()} aria-pressed={editor.isActive('strike')} title="Durchgestrichen" aria-label="Durchgestrichen">
+          S
+        </button>
+        <button type="button" className={`${btn(editor.isActive('caps'))} text-[11px] font-bold`} onClick={() => chain().toggleCaps().run()} aria-pressed={editor.isActive('caps')} title="Großbuchstaben" aria-label="Großbuchstaben">
+          AA
+        </button>
         <span className="mx-1 h-5 w-px bg-white/10" />
         <span className="inline-flex items-center">
-          <button type="button" className={btn} onClick={() => wrap(`[farbe=${color}]`, '[/farbe]')} title="Textfarbe" aria-label="Textfarbe">
-            <span className="font-bold" style={{ color, textShadow: '0 0 1px #000' }}>A</span>
+          <button type="button" className={btn(!!editor.getAttributes('textStyle').color)} onClick={() => chain().setColor(color).run()} title="Textfarbe" aria-label="Textfarbe">
+            <span className="font-bold" style={{ color, textShadow: '0 0 1px #000' }}>
+              A
+            </span>
           </button>
           <input type="color" aria-label="Farbe für Textfarbe" value={color} onChange={(e) => setColor(e.target.value)} className="h-6 w-5 cursor-pointer border-0 bg-transparent" />
         </span>
         <span className="inline-flex items-center">
-          <button type="button" className={btn} onClick={() => wrap(`[mark=${mark}]`, '[/mark]')} title="Markieren" aria-label="Markieren">
-            <span className="rounded px-1 text-xs font-bold text-slate-900" style={{ background: mark }}>ab</span>
+          <button type="button" className={btn(editor.isActive('highlight'))} onClick={() => chain().toggleHighlight({ color: mark }).run()} aria-pressed={editor.isActive('highlight')} title="Markieren" aria-label="Markieren">
+            <span className="rounded px-1 text-xs font-bold text-slate-900" style={{ background: mark }}>
+              ab
+            </span>
           </button>
           <input type="color" aria-label="Farbe für Markierung" value={mark} onChange={(e) => setMark(e.target.value)} className="h-6 w-5 cursor-pointer border-0 bg-transparent" />
         </span>
-        <select aria-label="Schriftgröße" className="h-8 rounded-md bg-transparent px-1 text-xs text-slate-300 hover:bg-white/10" value="" onChange={(e) => e.target.value && wrap(`[groesse=${e.target.value}]`, '[/groesse]')}>
-          <option value="" className="bg-slate-900">Größe</option>
-          {[11, 13, 15, 18, 22, 28, 36, 48].map((n) => (
+        <select
+          aria-label="Schriftgröße"
+          className="h-8 rounded-md bg-transparent px-1 text-xs text-slate-300 hover:bg-white/10"
+          value={currentSize}
+          onChange={(e) => (e.target.value ? chain().setFontSize(`${e.target.value}px`).run() : chain().unsetFontSize().run())}
+        >
+          <option value="" className="bg-slate-900">
+            Größe
+          </option>
+          {SIZES.map((n) => (
             <option key={n} value={n} className="bg-slate-900">
               {n}px
             </option>
           ))}
         </select>
-        <button type="button" className={btn} onClick={() => wrap(`[glow=${color}]`, '[/glow]')} title="Leuchten (in Textfarbe)" aria-label="Leuchten">
+        <button type="button" className={btn(editor.isActive('glow'))} onClick={() => chain().toggleGlow(color).run()} aria-pressed={editor.isActive('glow')} title="Leuchten (in Textfarbe)" aria-label="Leuchten">
           <span style={{ textShadow: `0 0 6px ${color}` }}>✦</span>
         </button>
         <button
           type="button"
-          className={btn}
+          className={btn(editor.isActive('link'))}
           onClick={() => {
+            if (editor.isActive('link')) return void chain().unsetLink().run();
             const href = window.prompt('Link-Adresse (https://…)', 'https://');
-            if (href && isHttpsUrl(href)) wrap(`[link=${href.trim()}]`, '[/link]', 'Linktext');
+            if (!href || !isHttpsUrl(href)) return;
+            if (editor.state.selection.empty) chain().insertContent({ type: 'text', text: 'Linktext', marks: [{ type: 'link', attrs: { href: href.trim() } }] }).run();
+            else chain().setLink({ href: href.trim() }).run();
           }}
-          title="Link einfügen"
-          aria-label="Link einfügen"
+          aria-pressed={editor.isActive('link')}
+          title={editor.isActive('link') ? 'Link entfernen' : 'Link einfügen'}
+          aria-label={editor.isActive('link') ? 'Link entfernen' : 'Link einfügen'}
         >
           🔗
         </button>
         <span className="relative">
-          <button type="button" className={btn} onClick={() => setEmojiOpen((v) => !v)} title="Emoji" aria-label="Emoji einfügen" aria-expanded={emojiOpen}>
+          <button type="button" className={btn()} onClick={() => setEmojiOpen((v) => !v)} title="Emoji" aria-label="Emoji einfügen" aria-expanded={emojiOpen}>
             😊
           </button>
           {emojiOpen && (
             <span className="absolute left-0 top-9 z-10 grid w-48 grid-cols-6 gap-1 rounded-xl border border-white/10 bg-[#0b0f18] p-2 shadow-xl">
               {QUICK_EMOJIS.map((e) => (
-                <button key={e} type="button" className="rounded p-1 text-lg hover:bg-white/10" onClick={() => (insert(e), setEmojiOpen(false))}>
+                <button key={e} type="button" className="rounded p-1 text-lg hover:bg-white/10" onClick={() => (chain().insertContent(e).run(), setEmojiOpen(false))}>
                   {e}
                 </button>
               ))}
@@ -154,11 +212,14 @@ export function RichTextArea({ value, onChange, rows = 4, placeholder, id, maxLe
           )}
         </span>
         <span className="flex-1" />
-        <button type="button" className={`${btn} text-[11px]`} onClick={() => onChange(value.replace(/\[\/?(b|i|u|s|gross|farbe|mark|glow|groesse|link)(=[^\]]*)?\]/gi, ''))} title="Formatierung entfernen">
+        <button type="button" className={`${btn()} text-[11px]`} onClick={() => chain().unsetAllMarks().run()} title="Formatierung entfernen" aria-label="Formatierung entfernen">
           Tx
         </button>
       </div>
-      <textarea id={id} ref={ref} rows={rows} maxLength={maxLength} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="block w-full resize-y bg-transparent px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none" />
+      <div className="relative">
+        {isEmpty && placeholder && <p className="pointer-events-none absolute left-3 top-2 text-sm text-slate-500">{placeholder}</p>}
+        <EditorContent editor={editor} className="bb-editor max-h-[420px] overflow-y-auto px-3 py-2 text-sm text-white" />
+      </div>
     </div>
   );
 }

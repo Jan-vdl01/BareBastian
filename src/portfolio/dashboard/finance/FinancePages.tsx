@@ -3,6 +3,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { AlertIcon, CheckIcon, ChevronDown, DownloadIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon, UploadIcon, XIcon } from '../../icons';
 import { downloadBlob } from '../../lib/download';
 import { BarList, ChartCard, ColumnChart, LineChart } from './charts';
+import { downloadFinancePdf } from './pdfExport';
 import {
   byCategory,
   byToy,
@@ -337,8 +338,11 @@ export function FinanceDashboard() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <FinanceNav active="overview" />
         <div className="mb-5 flex flex-wrap gap-2">
-          <a href={`#/abo-bereich/finanzen/bericht?range=${range}`} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm text-slate-200 hover:bg-white/5">
-            <DownloadIcon size={16} /> PDF-Bericht
+          <button type="button" onClick={() => downloadFinancePdf(data, range, user?.displayName ?? '')} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm text-slate-200 hover:bg-white/5">
+            <DownloadIcon size={16} /> PDF herunterladen
+          </button>
+          <a href={`#/abo-bereich/finanzen/bericht?range=${range}`} className="inline-flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm text-slate-400 hover:bg-white/5 hover:text-white">
+            Druckansicht
           </a>
           <button type="button" onClick={() => setForm(true)} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-900/40">
             <PlusIcon size={16} /> Stream eintragen
@@ -594,8 +598,11 @@ export function FinanceStreams() {
   const onImport = async (file: File | undefined) => {
     if (!file) return;
     try {
-      const { added, skipped } = importCsv(userId, await file.text());
-      setNotice({ ok: true, text: `${added} Stream${added === 1 ? '' : 's'} importiert${skipped ? ` · ${skipped} bereits vorhanden, übersprungen` : ''}.` });
+      const { added, skipped, invalid, errors } = importCsv(userId, await file.text());
+      setNotice({
+        ok: invalid === 0,
+        text: `${added} Stream${added === 1 ? '' : 's'} importiert${skipped ? ` · ${skipped} bereits vorhanden` : ''}${invalid ? ` · ${invalid} fehlerhaft übersprungen (${errors.join('; ')})` : ''}.`,
+      });
     } catch (err) {
       setNotice({ ok: false, text: err instanceof Error ? err.message : 'Import fehlgeschlagen.' });
     } finally {

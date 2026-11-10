@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { PHOTOS, POSTS, VIDEOS, type PhotoItem, type PostItem, type VideoItem } from '../dashboard/libraryData';
 import { readJSON, uid, writeJSON } from '../lib/localStore';
+import { contentSchema } from '../lib/schemas';
+import { describeIssues } from '../lib/store';
 import { downloadBlob } from '../lib/download';
 import { deleteMedia, getMedia, isLocalMedia } from '../lib/mediaDb';
 
@@ -25,8 +27,21 @@ type Source = 'local' | 'published' | 'defaults';
 const KEY = 'bb_content';
 const defaults = (): ContentState => ({ version: 1, updatedAt: '', videos: VIDEOS, photos: PHOTOS, posts: POSTS });
 
-const isContent = (v: unknown): v is ContentState =>
-  !!v && typeof v === 'object' && Array.isArray((v as ContentState).videos) && Array.isArray((v as ContentState).photos) && Array.isArray((v as ContentState).posts);
+const isContent = (v: unknown): v is ContentState => contentSchema.safeParse(v).success;
+
+/** Lokale Admin-Änderungen lesen – ungültige Daten werden ignoriert (Sicherung bleibt erhalten). */
+function readLocal(): ContentState | null {
+  const v = readJSON<unknown>(KEY, null);
+  if (v === null) return null;
+  if (isContent(v)) return v;
+  try {
+    localStorage.setItem(`${KEY}.backup`, JSON.stringify(v));
+  } catch {
+    /* ignorieren */
+  }
+  console.warn('[Speicher] Lokale Inhalte waren ungültig und werden ignoriert (Sicherung unter „bb_content.backup“).');
+  return null;
+}
 
 interface ContentContextValue extends ContentState {
   source: Source;
@@ -57,8 +72,8 @@ const extFor = (blob: Blob | undefined, fallback: string) => {
 };
 
 export function ContentProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<ContentState>(() => readJSON<ContentState | null>(KEY, null) ?? defaults());
-  const [source, setSource] = useState<Source>(() => (localStorage.getItem(KEY) ? 'local' : 'defaults'));
+  const [state, setState] = useState<ContentState>(() => readLocal() ?? defaults());
+  const [source, setSource] = useState<Source>(() => (readLocal() ? 'local' : 'defaults'));
 
   // Veröffentlichte content.json laden (nur wenn keine lokalen Admin-Änderungen vorliegen)
   useEffect(() => {
@@ -78,7 +93,7 @@ export function ContentProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key !== KEY) return;
-      const next = readJSON<ContentState | null>(KEY, null);
+      const next = readLocal();
       if (next) {
         setState(next);
         setSource('local');
@@ -141,9 +156,15 @@ export function ContentProvider({ children }: { children: ReactNode }) {
       savePost: (p) => commit((s) => ({ ...s, posts: upsert(s.posts, p).sort((a, b) => b.date.localeCompare(a.date)) })),
       deletePost: (id) => commit((s) => ({ ...s, posts: s.posts.filter((p) => p.id !== id) })),
       importContent: (json) => {
-        const data: unknown = JSON.parse(json);
-        if (!isContent(data)) throw new Error('Die Datei hat nicht das erwartete Format (videos, photos, posts).');
-        commit(() => data);
+        let data: unknown;
+        try {
+          data = JSON.parse(json);
+        } catch {
+          throw new Error('Die Datei ist kein gültiges JSON.');
+        }
+        const parsed = contentSchema.safeParse(data);
+        if (!parsed.success) throw new Error(`Die Datei hat nicht das erwartete Format: ${describeIssues(parsed.error)}`);
+        commit(() => data as ContentState);
       },
       resetContent: async () => {
         await Promise.all([...state.videos.map((v) => deleteMedia(v.src)), ...state.photos.map((p) => deleteMedia(p.src))]);

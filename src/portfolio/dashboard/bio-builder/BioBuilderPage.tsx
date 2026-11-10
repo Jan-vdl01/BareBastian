@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { closestCenter, DndContext, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent, type DraggableAttributes, type DraggableSyntheticListeners } from '@dnd-kit/core';
+import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '../../auth/AuthContext';
 import { AlertIcon, CheckIcon, ChevronDown, CopyIcon, DownloadIcon, EyeIcon, EyeOffIcon, PlusIcon, TrashIcon, XIcon } from '../../icons';
 import { downloadBlob } from '../../lib/download';
@@ -117,6 +121,27 @@ function moduleSummary(m: BioModule): string {
 }
 
 
+interface HandleProps {
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
+  setActivatorNodeRef: (el: HTMLElement | null) => void;
+}
+
+/** Sortierbare Modul-Zeile (dnd-kit): Maus, Touch & Tastatur. */
+function SortableRow({ id, className, children }: { id: string; className: string; children: (handle: HandleProps, dragging: boolean) => ReactNode }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <li
+      ref={setNodeRef}
+      id={`module-${id}`}
+      style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 30 : undefined }}
+      className={`${className} ${isDragging ? 'shadow-2xl shadow-violet-900/50 ring-2 ring-violet-400/60' : ''}`}
+    >
+      {children({ attributes, listeners, setActivatorNodeRef }, isDragging)}
+    </li>
+  );
+}
+
 function Panel({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
   return (
     <section className="rounded-2xl border border-white/10 bg-slate-900/50 p-5 backdrop-blur-xl">
@@ -165,15 +190,17 @@ function BioEditor({ userId, stored }: { userId: string; stored: StoredProject }
   const [palette, setPalette] = useState(false);
   const [starterOpen, setStarterOpen] = useState(false);
   const [designOpen, setDesignOpen] = useState(true);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
   const [tab, setTab] = useState<'preview' | 'html' | 'checks'>('preview');
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [pageDark, setPageDark] = useState(false);
   const [copied, setCopied] = useState(false);
   const [moduleTab, setModuleTab] = useState<'content' | 'style'>('content');
   const [styleClipboard, setStyleClipboard] = useState<BoxStyle | null>(null);
-  const listRef = useRef<HTMLOListElement>(null);
 
   // Automatisch speichern (leicht verzögert)
   const firstRender = useRef(true);
@@ -205,7 +232,8 @@ function BioEditor({ userId, stored }: { userId: string; stored: StoredProject }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      // Eingabefelder & Text-Editor haben ihr eigenes Rückgängig
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -491,50 +519,51 @@ function BioEditor({ userId, stored }: { userId: string; stored: StoredProject }
 
         {/* Module */}
         <Panel title={`Module (${project.modules.length})`} right={<span className="text-[11px] text-slate-500">Ziehen zum Sortieren</span>}>
-          <ol ref={listRef} className="space-y-2" onDragLeave={(e) => !listRef.current?.contains(e.relatedTarget as Node) && setDropIndex(null)}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+            onDragEnd={(e: DragEndEvent) => {
+              const from = project.modules.findIndex((x) => x.id === e.active.id);
+              const to = e.over ? project.modules.findIndex((x) => x.id === e.over!.id) : -1;
+              if (from >= 0 && to >= 0 && from !== to) moveModule(from, to);
+            }}
+            accessibility={{
+              screenReaderInstructions: { draggable: 'Leertaste drücken zum Aufnehmen, Pfeiltasten zum Verschieben, Leertaste zum Ablegen, Escape zum Abbrechen.' },
+              announcements: {
+                onDragStart: ({ active }) => `Modul ${getModuleDef(project.modules.find((x) => x.id === active.id)?.type ?? 'text').label} aufgenommen.`,
+                onDragOver: ({ over }) => (over ? `Über Position ${project.modules.findIndex((x) => x.id === over.id) + 1}.` : ''),
+                onDragEnd: ({ over }) => (over ? `Abgelegt auf Position ${project.modules.findIndex((x) => x.id === over.id) + 1}.` : 'Abgelegt.'),
+                onDragCancel: () => 'Verschieben abgebrochen.',
+              },
+            }}
+          >
+          <SortableContext items={project.modules.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+          <ol className="space-y-2">
             {project.modules.map((m, i) => {
               const def = getModuleDef(m.type);
               const Icon = def.icon;
               const open = openId === m.id;
               return (
-                <li
+                <SortableRow
                   key={m.id}
-                  id={`module-${m.id}`}
-                  onDragOver={(e) => {
-                    if (!dragId) return;
-                    e.preventDefault();
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setDropIndex(e.clientY < rect.top + rect.height / 2 ? i : i + 1);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const from = project.modules.findIndex((x) => x.id === dragId);
-                    if (from >= 0 && dropIndex !== null) moveModule(from, dropIndex > from ? dropIndex - 1 : dropIndex);
-                    setDragId(null);
-                    setDropIndex(null);
-                  }}
-                  className={`relative rounded-xl border transition-all ${open ? 'border-violet-400/40 bg-violet-400/[0.04]' : 'border-white/10 bg-white/[0.02]'} ${dragId === m.id ? 'opacity-40' : ''} ${m.hidden ? 'opacity-60' : ''}`}
+                  id={m.id}
+                  className={`relative rounded-xl border transition-colors ${open ? 'border-violet-400/40 bg-violet-400/[0.04]' : 'border-white/10 bg-white/[0.02]'} ${m.hidden ? 'opacity-60' : ''}`}
                 >
-                  {dropIndex === i && <span className="absolute -top-1.5 left-2 right-2 h-0.5 rounded-full bg-violet-400" />}
-                  {dropIndex === i + 1 && i === project.modules.length - 1 && <span className="absolute -bottom-1.5 left-2 right-2 h-0.5 rounded-full bg-violet-400" />}
+                  {(handle) => (
+                  <>
                   <div className="flex items-center gap-2 px-2 py-2">
-                    <span
-                      draggable
-                      onDragStart={(e) => {
-                        setDragId(m.id);
-                        e.dataTransfer.effectAllowed = 'move';
-                        e.dataTransfer.setData('text/plain', m.id);
-                      }}
-                      onDragEnd={() => {
-                        setDragId(null);
-                        setDropIndex(null);
-                      }}
-                      className="grid h-8 w-6 cursor-grab place-items-center text-slate-500 active:cursor-grabbing"
-                      aria-hidden="true"
-                      title="Ziehen zum Sortieren"
+                    <button
+                      type="button"
+                      ref={handle.setActivatorNodeRef}
+                      {...handle.attributes}
+                      {...handle.listeners}
+                      aria-label={`${def.label} verschieben`}
+                      title="Ziehen zum Sortieren (Maus, Finger oder Tastatur)"
+                      className="grid h-9 w-7 shrink-0 cursor-grab touch-none place-items-center rounded-md text-slate-500 hover:bg-white/10 hover:text-white active:cursor-grabbing"
                     >
                       ⋮⋮
-                    </span>
+                    </button>
                     <button type="button" onClick={() => setOpenId(open ? null : m.id)} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-violet-400/15 text-violet-200">
                         <Icon size={16} />
@@ -611,11 +640,15 @@ function BioEditor({ userId, stored }: { userId: string; stored: StoredProject }
                       )}
                     </div>
                   </div>
-                </li>
+                  </>
+                  )}
+                </SortableRow>
               );
             })}
             {project.modules.length === 0 && <li className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-slate-500">Noch keine Module – füge unten dein erstes hinzu.</li>}
           </ol>
+          </SortableContext>
+          </DndContext>
 
           <div className="mt-4">
             {palette ? (

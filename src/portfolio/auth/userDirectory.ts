@@ -1,6 +1,8 @@
 import { CREATOR_ID } from '../config/admin';
 import { PROFILE } from '../data';
-import { readJSON, uid, useStoredValue, writeJSON } from '../lib/localStore';
+import { readJSON, uid, writeJSON } from '../lib/localStore';
+import { profilesSchema } from '../lib/schemas';
+import { defineStore } from '../lib/store';
 
 /**
  * Öffentliche Mitgliederprofile (wie bei Social Media).
@@ -72,21 +74,17 @@ const SEED: Profile[] = [
   demo('demo-jonas', 'Jonas', 'jonas.fit', 'Laufen, Kochen, gute Gespräche', 'München', ['Laufen', 'Kochen', 'Podcasts'], '2026-08-09T10:00:00.000Z'),
 ];
 
-function readProfiles(): Record<string, Profile> {
-  const stored = readJSON<Record<string, Profile> | null>(PROFILES_KEY, null);
-  if (stored) return stored;
-  const seeded = Object.fromEntries(SEED.map((p) => [p.id, p]));
-  writeJSON(PROFILES_KEY, seeded);
-  return seeded;
-}
+const seedProfiles = () => Object.fromEntries(SEED.map((p) => [p.id, p])) as Record<string, Profile>;
+
+/** Validierter Profil-Speicher; Startprofile werden beim ersten Aufruf angelegt. */
+const profileStore = defineStore<Record<string, Profile>>({ key: PROFILES_KEY, schema: profilesSchema, fallback: seedProfiles, seed: seedProfiles });
+const readProfiles = profileStore.read;
 
 export const getProfile = (id: string): Profile | undefined => readProfiles()[id];
 export const listProfiles = (): Profile[] => Object.values(readProfiles());
 
 export function saveProfile(profile: Profile) {
-  const all = readProfiles();
-  all[profile.id] = profile;
-  writeJSON(PROFILES_KEY, all);
+  profileStore.update((all) => ({ ...all, [profile.id]: profile }));
 }
 
 export function isUsernameTaken(username: string, exceptId: string) {
@@ -138,10 +136,7 @@ export function ensureCreatorProfile(): Profile {
   return p;
 }
 
-export function useProfiles(): Record<string, Profile> {
-  const stored = useStoredValue<Record<string, Profile> | null>(PROFILES_KEY, null);
-  return stored ?? readProfiles();
-}
+export const useProfiles = (): Record<string, Profile> => profileStore.use();
 
 export function useProfile(id: string | undefined): Profile | undefined {
   const all = useProfiles();

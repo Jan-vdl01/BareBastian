@@ -137,3 +137,23 @@ html {
     break-inside: avoid;
   }
 }
+
+/* ---------- WYSIWYG-Editor (TipTap) ---------- */
+.bb-editor .bb-editor-content {
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+}
+.bb-editor .bb-editor-content p {
+  margin: 0;
+}
+.bb-editor .bb-editor-content a {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+.bb-editor .bb-editor-content mark {
+  border-radius: 4px;
+  padding: 0 3px;
+  color: #0b0b0b;
+}

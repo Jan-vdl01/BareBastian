@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { getProfile } from '../../auth/userDirectory';
-import { readJSON, uid, useStoredValue, writeJSON } from '../../lib/localStore';
+import { uid } from '../../lib/localStore';
+import { chatSchema } from '../../lib/schemas';
+import { defineStore } from '../../lib/store';
 
 /**
  * Chat-Nachrichten (Demo: im Browser gespeichert, synchron zwischen Tabs).
@@ -24,7 +26,9 @@ export interface Conversation {
 const KEY = 'bb_chat';
 export const MAX_MESSAGE_LENGTH = 1000;
 
-const readAll = () => readJSON<Message[]>(KEY, []);
+const chatStore = defineStore<Message[]>({ key: KEY, schema: chatSchema, fallback: () => [] });
+const readAll = chatStore.read;
+const writeJSON = (_key: string, value: Message[]) => chatStore.write(value);
 
 export function sendMessage(from: string, to: string, rawText: string): Message | null {
   const text = rawText.trim().slice(0, MAX_MESSAGE_LENGTH);
@@ -55,7 +59,7 @@ export function deleteConversation(me: string, other: string) {
   );
 }
 
-export const useAllMessages = () => useStoredValue<Message[]>(KEY, []);
+export const useAllMessages = () => chatStore.use();
 
 export function useConversations(me: string | undefined): Conversation[] {
   const all = useAllMessages();

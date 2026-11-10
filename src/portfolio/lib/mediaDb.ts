@@ -1,3 +1,4 @@
+import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { useEffect, useState } from 'react';
 
 /**
@@ -8,36 +9,35 @@ const DB_NAME = 'bb_media';
 const STORE = 'files';
 export const IDB_PREFIX = 'idb:';
 
-function open(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (!('indexedDB' in window)) return reject(new Error('IndexedDB wird von diesem Browser nicht unterstützt.'));
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error('IndexedDB konnte nicht geöffnet werden.'));
-  });
+interface MediaDB extends DBSchema {
+  files: { key: string; value: Blob };
 }
 
-async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  const db = await open();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction(STORE, mode);
-    const req = fn(t.objectStore(STORE));
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-    t.oncomplete = () => db.close();
+let dbPromise: Promise<IDBPDatabase<MediaDB>> | null = null;
+
+/** Verbindung zur Medien-Datenbank (wird wiederverwendet). */
+function db(): Promise<IDBPDatabase<MediaDB>> {
+  if (!('indexedDB' in window)) return Promise.reject(new Error('IndexedDB wird von diesem Browser nicht unterstützt.'));
+  dbPromise ??= openDB<MediaDB>(DB_NAME, 1, {
+    upgrade(database) {
+      if (!database.objectStoreNames.contains(STORE)) database.createObjectStore(STORE);
+    },
+  }).catch((err) => {
+    dbPromise = null;
+    throw err instanceof Error ? err : new Error('IndexedDB konnte nicht geöffnet werden.');
   });
+  return dbPromise;
 }
 
 export async function putMedia(key: string, file: Blob): Promise<string> {
-  await tx('readwrite', (s) => s.put(file, key));
+  await (await db()).put(STORE, file, key);
   return `${IDB_PREFIX}${key}`;
 }
 
-export const getMedia = (ref: string) => tx<Blob | undefined>('readonly', (s) => s.get(ref.slice(IDB_PREFIX.length)));
+export const getMedia = async (ref: string): Promise<Blob | undefined> => (await db()).get(STORE, ref.slice(IDB_PREFIX.length));
 
 export async function deleteMedia(ref: string | undefined) {
-  if (ref?.startsWith(IDB_PREFIX)) await tx('readwrite', (s) => s.delete(ref.slice(IDB_PREFIX.length)));
+  if (ref?.startsWith(IDB_PREFIX)) await (await db()).delete(STORE, ref.slice(IDB_PREFIX.length));
 }
 
 export const isLocalMedia = (src?: string) => !!src?.startsWith(IDB_PREFIX);

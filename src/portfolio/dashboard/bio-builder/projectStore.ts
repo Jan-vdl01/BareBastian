@@ -2,7 +2,9 @@
  * Ablage für mehrere Bio-Profile pro Benutzer (Demo: localStorage).
  * Enthält Ordner, Favoriten-Themes, Versionen und Import/Export.
  */
-import { useStoredValue, readJSON, uid, writeJSON } from '../../lib/localStore';
+import { readJSON, uid } from '../../lib/localStore';
+import { bioExportSchema, bioLibrarySchema } from '../../lib/schemas';
+import { defineUserStore, describeIssues } from '../../lib/store';
 import type { BioModule, BioProject } from './types';
 
 export interface ProjectVersion {
@@ -47,11 +49,9 @@ export function migrateProject(p: BioProject): BioProject {
   return { ...p, version: 1, modules };
 }
 
-export function readLibrary(userId: string): BioLibrary {
-  const lib = readJSON<BioLibrary | null>(key(userId), null);
-  if (lib?.version === 1) return lib;
+/** Startzustand – übernimmt ein einzelnes Profil aus der Vorversion (feste ID, damit Links stabil bleiben). */
+function initialLibrary(userId: string): BioLibrary {
   const fresh = empty();
-  // Einzelnes Profil aus der Vorversion übernehmen
   const legacy = readJSON<BioProject | null>(legacyKey(userId), null);
   if (legacy?.version === 1 && Array.isArray(legacy.modules)) {
     const now = new Date().toISOString();
@@ -60,20 +60,25 @@ export function readLibrary(userId: string): BioLibrary {
   return fresh;
 }
 
-function write(userId: string, lib: BioLibrary) {
-  writeJSON(key(userId), lib);
-}
+const migrateLibrary = (raw: unknown) => {
+  if (!raw || typeof raw !== 'object' || !Array.isArray((raw as BioLibrary).projects)) return raw;
+  const lib = raw as BioLibrary;
+  return { ...lib, projects: lib.projects.map((p) => ({ ...p, project: migrateProject(p.project), versions: (p.versions ?? []).map((v) => ({ ...v, project: migrateProject(v.project) })) })) };
+};
 
-function update(userId: string, fn: (lib: BioLibrary) => BioLibrary) {
-  const next = fn(readLibrary(userId));
-  write(userId, next);
-  return next;
+const stores = new Map<string, ReturnType<typeof libraryStoreFor>>();
+function libraryStoreFor(userId: string) {
+  return defineUserStore<BioLibrary>('bb_bio_library_', { schema: bioLibrarySchema, fallback: () => initialLibrary(userId), migrate: migrateLibrary });
 }
+const storeOf = (userId: string) => {
+  if (!stores.has(userId)) stores.set(userId, libraryStoreFor(userId));
+  return stores.get(userId)!;
+};
 
-export function useLibrary(userId: string): BioLibrary {
-  const stored = useStoredValue<BioLibrary | null>(key(userId), null);
-  return stored?.version === 1 ? stored : readLibrary(userId);
-}
+export const readLibrary = (userId: string): BioLibrary => storeOf(userId).forUser(userId).read();
+const write = (userId: string, lib: BioLibrary) => storeOf(userId).forUser(userId).write(lib);
+const update = (userId: string, fn: (lib: BioLibrary) => BioLibrary) => storeOf(userId).forUser(userId).update(fn);
+export const useLibrary = (userId: string): BioLibrary => storeOf(userId).use(userId);
 
 export const getProject = (userId: string, id: string) => readLibrary(userId).projects.find((p) => p.id === id);
 
@@ -157,14 +162,14 @@ export function exportProjects(userId: string, ids: string[]): string {
 
 /** Importiert Profile aus einer Export-Datei. Liefert die Anzahl. */
 export function importProjects(userId: string, json: string): number {
-  const data = JSON.parse(json) as Partial<ExportFile>;
-  if (data.format !== 'barebastian-bio' || !Array.isArray(data.profiles)) throw new Error('Diese Datei ist kein exportiertes Bio-Profil.');
-  let n = 0;
-  for (const p of data.profiles) {
-    if (!p?.project || !Array.isArray(p.project.modules) || !p.project.theme) continue;
-    createProject(userId, `${p.name || 'Importiert'}`, p.project, p.folder || DEFAULT_FOLDER);
-    n++;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    throw new Error('Die Datei ist kein gültiges JSON.');
   }
-  if (!n) throw new Error('In der Datei wurden keine gültigen Profile gefunden.');
-  return n;
+  const parsed = bioExportSchema.safeParse(raw);
+  if (!parsed.success) throw new Error(`Diese Datei ist kein gültiges Bio-Profil (${describeIssues(parsed.error)}).`);
+  for (const p of (raw as ExportFile).profiles) createProject(userId, p.name || 'Importiert', migrateProject(p.project), p.folder || DEFAULT_FOLDER);
+  return parsed.data.profiles.length;
 }

@@ -4,6 +4,7 @@ import { PROFILE } from '../../data';
 import { ArrowLeft, DownloadIcon } from '../../icons';
 import { navigate } from '../../router';
 import { LineChart } from './charts';
+import { downloadFinancePdf } from './pdfExport';
 import {
   byCategory,
   byToy,
@@ -110,10 +111,12 @@ export function FinanceReport({ query }: { query: URLSearchParams }) {
           ))}
         </select>
         <span className="flex-1" />
-        <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg bg-[#2a78d6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#256abf]">
-          <DownloadIcon size={15} /> Drucken / Als PDF speichern
+        <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg border border-[#c9c8c3] bg-white px-4 py-2 text-sm text-[#0b0b0b] hover:bg-[#f7f7f5]">
+          Drucken
         </button>
-        <p className="w-full text-xs text-[#77766f]">Tipp: Im Druckdialog als Ziel „Als PDF speichern“ wählen.</p>
+        <button type="button" onClick={() => downloadFinancePdf(data, range, profile?.displayName ?? '')} className="inline-flex items-center gap-2 rounded-lg bg-[#2a78d6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#256abf]">
+          <DownloadIcon size={15} /> PDF herunterladen
+        </button>
       </div>
 
       <article className="mx-auto max-w-[210mm] bg-white px-[14mm] py-[12mm] text-[#0b0b0b] shadow-xl print:max-w-none print:p-0 print:shadow-none" style={{ fontFamily: 'Inter, Arial, sans-serif' }}>

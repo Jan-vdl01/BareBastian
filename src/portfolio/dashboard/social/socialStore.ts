@@ -3,7 +3,9 @@
  */
 import { getProfile, listProfiles, type Profile } from '../../auth/userDirectory';
 import { CREATOR_ID } from '../../config/admin';
-import { readJSON, uid, useStoredValue, writeJSON } from '../../lib/localStore';
+import { uid } from '../../lib/localStore';
+import { socialSchema } from '../../lib/schemas';
+import { defineStore } from '../../lib/store';
 import { deleteMedia } from '../../lib/mediaDb';
 import type { FontId } from '../bio-builder/themes';
 
@@ -119,21 +121,13 @@ function seed(): SocialState {
   };
 }
 
-function read(): SocialState {
-  const s = readJSON<SocialState | null>(KEY, null);
-  if (s?.version === 1) return s;
-  const fresh = seed();
-  writeJSON(KEY, fresh);
-  return fresh;
-}
+const store = defineStore<SocialState>({ key: KEY, schema: socialSchema, fallback: seed, seed });
 
-const write = (s: SocialState) => writeJSON(KEY, s);
-const update = (fn: (s: SocialState) => SocialState) => write(fn(read()));
+const read = store.read;
+const write = store.write;
+const update = (fn: (s: SocialState) => SocialState) => store.update(fn);
 
-export function useSocial(): SocialState {
-  const s = useStoredValue<SocialState | null>(KEY, null);
-  return s?.version === 1 ? s : read();
-}
+export const useSocial = (): SocialState => store.use();
 
 /** Neue Mitglieder folgen anfangs BAREBASTIAN. */
 export function ensureMember(userId: string) {
