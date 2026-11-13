@@ -24,7 +24,7 @@ export const PLAN_FEATURES = [
   'Komplette Videobibliothek in HD streamen',
   'Alle Fotoalben & exklusive Posts',
   'Modularer Chaturbate-Bio-Baukasten',
-  'Jederzeit kündbar',
+  'Keine automatische Verlängerung',
 ];
 
 export const formatEuro = (value: number) =>

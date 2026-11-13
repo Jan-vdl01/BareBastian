@@ -1,18 +1,15 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { PHOTOS, POSTS, VIDEOS, type PhotoItem, type PostItem, type VideoItem } from '../dashboard/libraryData';
-import { readJSON, uid, writeJSON } from '../lib/localStore';
+import { createContext, useCallback, useContext, useMemo, useRef, type ReactNode } from 'react';
+import { useAuth } from '../auth/AuthContext';
+import type { PhotoItem, PostItem, VideoItem } from '../dashboard/libraryData';
+import { api, deleteFile } from '../lib/api';
+import { uid } from '../lib/localStore';
+import { remoteResource } from '../lib/remote';
 import { contentSchema } from '../lib/schemas';
 import { describeIssues } from '../lib/store';
-import { downloadBlob } from '../lib/download';
-import { deleteMedia, getMedia, isLocalMedia } from '../lib/mediaDb';
 
 /**
- * Inhalte der Bibliothek (Videos, Fotos, Posts).
- *
- * Reihenfolge beim Laden:
- *  1. Änderungen des Admins in diesem Browser (localStorage)
- *  2. content.json neben der index.html (vom Admin exportiert und hochgeladen)
- *  3. Beispielinhalte aus libraryData.ts
+ * Inhalte der Bibliothek (Videos, Fotos, Posts) – vom Server, nur mit aktivem Abo.
+ * Nur der Admin kann sie ändern; jede Änderung wird sofort gespeichert.
  */
 export interface ContentState {
   version: 1;
@@ -22,39 +19,19 @@ export interface ContentState {
   posts: PostItem[];
 }
 
-type Source = 'local' | 'published' | 'defaults';
-
-const KEY = 'bb_content';
-const defaults = (): ContentState => ({ version: 1, updatedAt: '', videos: VIDEOS, photos: PHOTOS, posts: POSTS });
-
-const isContent = (v: unknown): v is ContentState => contentSchema.safeParse(v).success;
-
-/** Lokale Admin-Änderungen lesen – ungültige Daten werden ignoriert (Sicherung bleibt erhalten). */
-function readLocal(): ContentState | null {
-  const v = readJSON<unknown>(KEY, null);
-  if (v === null) return null;
-  if (isContent(v)) return v;
-  try {
-    localStorage.setItem(`${KEY}.backup`, JSON.stringify(v));
-  } catch {
-    /* ignorieren */
-  }
-  console.warn('[Speicher] Lokale Inhalte waren ungültig und werden ignoriert (Sicherung unter „bb_content.backup“).');
-  return null;
-}
+const empty = (): ContentState => ({ version: 1, updatedAt: '', videos: [], photos: [], posts: [] });
+export const contentResource = remoteResource<ContentState>('/content', empty, 120000);
 
 interface ContentContextValue extends ContentState {
-  source: Source;
-  saveVideo: (v: VideoItem) => void;
+  loaded: boolean;
+  saveVideo: (v: VideoItem) => Promise<void>;
   deleteVideo: (id: string) => Promise<void>;
-  savePhotos: (items: PhotoItem[]) => void;
+  savePhotos: (items: PhotoItem[]) => Promise<void>;
   deletePhoto: (id: string) => Promise<void>;
-  savePost: (p: PostItem) => void;
-  deletePost: (id: string) => void;
-  importContent: (json: string) => void;
-  resetContent: () => Promise<void>;
-  exportContent: () => { json: string; localFiles: { ref: string; path: string }[] };
-  downloadLocalFiles: () => Promise<number>;
+  savePost: (p: PostItem) => Promise<void>;
+  deletePost: (id: string) => Promise<void>;
+  importContent: (json: string) => Promise<void>;
+  exportContent: () => { json: string };
 }
 
 const ContentContext = createContext<ContentContextValue | null>(null);
@@ -71,91 +48,60 @@ const extFor = (blob: Blob | undefined, fallback: string) => {
   return fallback;
 };
 
+const upsert = <T extends { id: string }>(list: T[], item: T) => (list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [item, ...list]);
+
+/** Lädt die Bibliothek nur für Abonnenten (sonst verweigert der Server den Zugriff). */
+function ContentLoader({ children }: { children: ReactNode }) {
+  contentResource.use();
+  return <>{children}</>;
+}
+
 export function ContentProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<ContentState>(() => readLocal() ?? defaults());
-  const [source, setSource] = useState<Source>(() => (readLocal() ? 'local' : 'defaults'));
+  const { isSubscribed } = useAuth();
+  const state = contentResource.useCached();
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
 
-  // Veröffentlichte content.json laden (nur wenn keine lokalen Admin-Änderungen vorliegen)
-  useEffect(() => {
-    if (localStorage.getItem(KEY) || location.protocol === 'file:') return;
-    fetch('content.json', { cache: 'no-cache' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (isContent(data) && !localStorage.getItem(KEY)) {
-          setState(data);
-          setSource('published');
-        }
-      })
-      .catch(() => undefined);
-  }, []);
-
-  // Änderungen aus anderen Tabs übernehmen
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== KEY) return;
-      const next = readLocal();
-      if (next) {
-        setState(next);
-        setSource('local');
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
-
+  /** Änderung lokal anwenden und nacheinander auf dem Server speichern. */
   const commit = useCallback((fn: (s: ContentState) => ContentState) => {
-    setState((prev) => {
-      const next = { ...fn(prev), version: 1 as const, updatedAt: new Date().toISOString() };
-      writeJSON(KEY, next);
-      return next;
-    });
-    setSource('local');
+    const next = { ...fn(contentResource.get()), version: 1 as const };
+    contentResource.set(next);
+    const job = queue.current.then(() => api.put<ContentState>('/content', contentResource.get()));
+    queue.current = job.catch(() => undefined);
+    return job
+      .then((saved) => contentResource.set(saved))
+      .catch((err) => {
+        contentResource.refresh();
+        throw err;
+      });
   }, []);
 
-  const upsert = <T extends { id: string }>(list: T[], item: T) =>
-    list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [item, ...list];
-
-  const value = useMemo<ContentContextValue>(() => {
-    const exportContent = () => {
-      const localFiles: { ref: string; path: string }[] = [];
-      const mapSrc = (src: string | undefined, folder: string, id: string, ext: string) => {
-        if (!isLocalMedia(src)) return src;
-        const path = `media/${folder}/${id}.${ext}`;
-        localFiles.push({ ref: src!, path });
-        return path;
-      };
-      const data: ContentState = {
-        ...state,
-        videos: state.videos.map((v) => ({ ...v, src: mapSrc(v.src, 'videos', v.id, v.fileExt ?? 'mp4') })),
-        photos: state.photos.map((p) => ({ ...p, src: mapSrc(p.src, 'photos', p.id, p.fileExt ?? 'jpg') })),
-      };
-      return { json: JSON.stringify(data, null, 2), localFiles };
-    };
-
-    return {
+  const value = useMemo<ContentContextValue>(
+    () => ({
       ...state,
-      source,
+      loaded: contentResource.loaded(),
       saveVideo: (v) => commit((s) => ({ ...s, videos: upsert(s.videos, v) })),
       deleteVideo: async (id) => {
-        await deleteMedia(state.videos.find((v) => v.id === id)?.src);
-        commit((s) => ({
+        const v = contentResource.get().videos.find((x) => x.id === id);
+        await commit((s) => ({
           ...s,
-          videos: s.videos.filter((v) => v.id !== id),
+          videos: s.videos.filter((x) => x.id !== id),
           posts: s.posts.map((p) => (p.videoId === id ? { ...p, videoId: undefined } : p)),
         }));
+        await Promise.all([deleteFile(v?.src), deleteFile(v?.poster)]);
       },
       savePhotos: (items) => commit((s) => ({ ...s, photos: items.reduce((list, item) => upsert(list, item), s.photos) })),
       deletePhoto: async (id) => {
-        await deleteMedia(state.photos.find((p) => p.id === id)?.src);
-        commit((s) => ({
+        const p = contentResource.get().photos.find((x) => x.id === id);
+        await commit((s) => ({
           ...s,
-          photos: s.photos.filter((p) => p.id !== id),
-          posts: s.posts.map((p) => ({ ...p, photoIds: p.photoIds?.filter((x) => x !== id) })),
+          photos: s.photos.filter((x) => x.id !== id),
+          posts: s.posts.map((x) => ({ ...x, photoIds: x.photoIds?.filter((pid) => pid !== id) })),
         }));
+        await deleteFile(p?.src);
       },
       savePost: (p) => commit((s) => ({ ...s, posts: upsert(s.posts, p).sort((a, b) => b.date.localeCompare(a.date)) })),
       deletePost: (id) => commit((s) => ({ ...s, posts: s.posts.filter((p) => p.id !== id) })),
-      importContent: (json) => {
+      importContent: async (json) => {
         let data: unknown;
         try {
           data = JSON.parse(json);
@@ -164,29 +110,18 @@ export function ContentProvider({ children }: { children: ReactNode }) {
         }
         const parsed = contentSchema.safeParse(data);
         if (!parsed.success) throw new Error(`Die Datei hat nicht das erwartete Format: ${describeIssues(parsed.error)}`);
-        commit(() => data as ContentState);
+        await commit(() => data as ContentState);
       },
-      resetContent: async () => {
-        await Promise.all([...state.videos.map((v) => deleteMedia(v.src)), ...state.photos.map((p) => deleteMedia(p.src))]);
-        localStorage.removeItem(KEY);
-        setState(defaults());
-        setSource('defaults');
-      },
-      exportContent,
-      downloadLocalFiles: async () => {
-        const { localFiles } = exportContent();
-        for (const f of localFiles) {
-          const blob = await getMedia(f.ref);
-          if (!blob) continue;
-          downloadBlob(blob, f.path.split('/').pop()!);
-          await new Promise((r) => setTimeout(r, 400));
-        }
-        return localFiles.length;
-      },
-    };
-  }, [state, source, commit]);
+      exportContent: () => ({ json: JSON.stringify(contentResource.get(), null, 2) }),
+    }),
+    [state, commit],
+  );
 
-  return <ContentContext.Provider value={value}>{children}</ContentContext.Provider>;
+  return (
+    <ContentContext.Provider value={value}>
+      {isSubscribed ? <ContentLoader>{children}</ContentLoader> : children}
+    </ContentContext.Provider>
+  );
 }
 
 export function useContent(): ContentContextValue {

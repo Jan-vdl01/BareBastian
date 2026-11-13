@@ -2,16 +2,23 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { CheckIcon, ImageIcon, PlusIcon, TrashIcon, XIcon } from '../../icons';
 import { readJSON, uid } from '../../lib/localStore';
-import { deleteMedia, putMedia, resizeImage, useMediaUrl } from '../../lib/mediaDb';
+import { deleteFile, uploadFile } from '../../lib/api';
+import { resizeImage, useMediaUrl } from '../../lib/mediaDb';
 import { ColorPick, FontSelect, RichTextArea } from '../bio-builder/ModuleEditors';
 import { POST_BACKGROUNDS } from './PostContent';
 import { PostCard } from './PostCard';
-import { DEFAULT_DESIGN, extractTags, MAX_IMAGES, MAX_POST_LENGTH, savePost, scheduleDemoReactions, type PostDesign, type PostInput, type SocialPost } from './socialStore';
+import { DEFAULT_DESIGN, extractTags, MAX_IMAGES, MAX_POST_LENGTH, savePost, type PostDesign, type PostInput, type SocialPost } from './socialStore';
 
 const draftKey = (userId: string) => `bb_social_draft_${userId}`;
 
-async function dataUrlToBlob(dataUrl: string) {
-  return (await fetch(dataUrl)).blob();
+/** Data-URL in eine Datei umwandeln (ohne fetch – das blockiert die Sicherheitsrichtlinie). */
+function dataUrlToBlob(dataUrl: string) {
+  const [head, data] = dataUrl.split(',');
+  const mime = /data:([^;]+)/.exec(head)?.[1] ?? 'image/jpeg';
+  const bin = atob(data);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
 }
 
 function Thumb({ src, onRemove, index }: { src: string; onRemove: () => void; index: number }) {
@@ -70,8 +77,8 @@ export function PostComposer({ editing, onClose }: { editing?: SocialPost; onClo
     try {
       const refs: string[] = [];
       for (const f of imgs) {
-        const blob = await dataUrlToBlob(await resizeImage(f, 1600, 1600, 0.85));
-        const ref = await putMedia(`post-${uid()}`, blob);
+        const blob = dataUrlToBlob(await resizeImage(f, 1600, 1600, 0.85));
+        const ref = await uploadFile(blob, 'social');
         added.add(ref);
         refs.push(ref);
       }
@@ -85,12 +92,12 @@ export function PostComposer({ editing, onClose }: { editing?: SocialPost; onClo
 
   const removeImage = (ref: string) => {
     setImages((v) => v.filter((x) => x !== ref));
-    if (added.has(ref)) deleteMedia(ref).catch(() => undefined);
+    if (added.has(ref)) deleteFile(ref);
   };
 
   const close = () => {
     // nicht gepostete neue Bilder wieder entfernen
-    if (!busy) added.forEach((ref) => !images.includes(ref) && deleteMedia(ref).catch(() => undefined));
+    if (!busy) added.forEach((ref) => deleteFile(ref));
     onClose();
   };
 
@@ -109,19 +116,20 @@ export function PostComposer({ editing, onClose }: { editing?: SocialPost; onClo
       : null,
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!text.trim() && !images.length && !pollOn) return setError('Schreib etwas, füge ein Bild hinzu oder erstelle eine Umfrage.');
     if (pollOn && input.poll!.options.length < 2) return setError('Eine Umfrage braucht mindestens 2 Antworten.');
+    setBusy(true);
+    setError(null);
     try {
-      const saved = savePost(me, input, editing?.id);
-      if (!editing) {
-        localStorage.removeItem(draftKey(me));
-        scheduleDemoReactions(saved.id);
-      }
+      await savePost(me, input, editing?.id);
+      if (!editing) localStorage.removeItem(draftKey(me));
       added.clear();
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Posten fehlgeschlagen.');
+    } finally {
+      setBusy(false);
     }
   };
 

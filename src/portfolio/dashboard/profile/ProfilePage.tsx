@@ -7,7 +7,7 @@ import { coverGradient, ProfileAvatar, ProfileName } from './ProfileAvatar';
 import { PostCard } from '../social/PostCard';
 import { PostComposer } from '../social/PostComposer';
 import { FollowButton } from '../social/SocialPage';
-import { canSee, ensureMember, followersOf, followingOf, useSocial, type SocialPost } from '../social/socialStore';
+import { canSee, followersOf, followingOf, useSocial, type SocialPost } from '../social/socialStore';
 import { useEffect } from 'react';
 import { ProfileEditor } from './ProfileEditor';
 
@@ -38,9 +38,6 @@ export function ProfilePage({ query }: { query: URLSearchParams }) {
   const [editing, setEditing] = useState(false);
   const [composer, setComposer] = useState<{ editing?: SocialPost } | null>(null);
   const social = useSocial();
-  useEffect(() => {
-    if (user?.id) ensureMember(user.id);
-  }, [user?.id]);
   const targetId = query.get('u') ?? user?.id ?? '';
   const profile = profiles[targetId];
   const isOwn = targetId === user?.id;
@@ -116,7 +113,6 @@ export function ProfilePage({ query }: { query: URLSearchParams }) {
                 @{profile.username}
                 {profile.pronouns && <span> · {profile.pronouns}</span>}
                 {profile.id === CREATOR_ID && <span className="ml-2 rounded-full bg-cyan-400/15 px-2 py-0.5 text-[11px] font-semibold text-cyan-200">Creator</span>}
-                {profile.isDemo && <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-slate-300">Demo-Profil</span>}
               </p>
             </div>
 

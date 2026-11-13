@@ -6,11 +6,11 @@
  * - Gültige Daten werden unverändert zurückgegeben (keine Felder gehen verloren).
  * - Änderungen lösen ein Event aus; Hooks in allen Komponenten/Tabs aktualisieren sich.
  *
- * Für ein echtes Backend lässt sich diese Schicht später durch API-Aufrufe ersetzen,
- * ohne dass sich die Stores darüber ändern müssen.
+ * Persönliche Daten (defineUserStore) werden auf dem Server gespeichert, siehe unten.
  */
 import { useEffect, useState } from 'react';
 import type { z } from 'zod';
+import { api } from './api';
 import { StorageFullError } from './localStore';
 
 const EVENT = 'bb:store';
@@ -116,11 +116,122 @@ export function defineStore<T>({ key, schema, fallback, migrate, seed }: StoreOp
   return { key, read, write, update, use };
 }
 
-/** Speicher, deren Schlüssel vom Benutzer abhängt (z. B. Finanzdaten pro Konto). */
+/* ================= Persönliche Daten auf dem Server ================= */
+
+/**
+ * Persönliche Dokumente (Finanzen, Bio-Designer) liegen auf dem Server.
+ * Beim Anmelden werden alle geladen (`hydrateDocs`), Lesen ist danach synchron,
+ * Änderungen werden kurz gesammelt und dann gespeichert.
+ */
+const docCache = new Map<string, unknown>();
+const pendingWrites = new Map<string, ReturnType<typeof setTimeout>>();
+let saveListeners: ((state: 'saving' | 'saved' | 'error') => void)[] = [];
+
+export const onDocSave = (fn: (state: 'saving' | 'saved' | 'error') => void) => {
+  saveListeners.push(fn);
+  return () => {
+    saveListeners = saveListeners.filter((f) => f !== fn);
+  };
+};
+
+export async function hydrateDocs() {
+  const docs = await api.get<Record<string, unknown>>('/docs');
+  docCache.clear();
+  for (const [k, v] of Object.entries(docs)) if (v !== null) docCache.set(k, v);
+}
+
+export function clearDocs() {
+  pendingWrites.forEach((t) => clearTimeout(t));
+  pendingWrites.clear();
+  docCache.clear();
+}
+
+function pushDoc(key: string, keepalive = false) {
+  pendingWrites.delete(key);
+  saveListeners.forEach((f) => f('saving'));
+  return fetch(`/api/docs/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    keepalive,
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-BB': '1' },
+    body: JSON.stringify({ value: docCache.get(key) ?? null }),
+  })
+    .then((r) => saveListeners.forEach((f) => f(r.ok ? 'saved' : 'error')))
+    .catch(() => saveListeners.forEach((f) => f('error')));
+}
+
+/** Offene Änderungen sofort senden (z. B. beim Verlassen der Seite). */
+export function flushDocs(keepalive = false) {
+  for (const [key, t] of pendingWrites) {
+    clearTimeout(t);
+    pushDoc(key, keepalive);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => flushDocs(true));
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flushDocs(true));
+}
+
+function defineServerStore<T>({ key, schema, fallback, migrate, seed }: StoreOptions<T>): Store<T> {
+  const write = (value: T) => {
+    const check = schema.safeParse(value);
+    if (!check.success) console.warn(`[Speicher] Schreibe ungeprüfte Daten nach „${key}“: ${describeIssues(check.error)}`);
+    docCache.set(key, value);
+    const t = pendingWrites.get(key);
+    if (t) clearTimeout(t);
+    pendingWrites.set(key, setTimeout(() => pushDoc(key), 700));
+    window.dispatchEvent(new CustomEvent(EVENT, { detail: key }));
+  };
+
+  const read = (): T => {
+    if (!docCache.has(key)) {
+      const initial = seed ? seed() : fallback();
+      docCache.set(key, initial);
+      return initial;
+    }
+    const raw = docCache.get(key);
+    const value = migrate ? migrate(raw) : raw;
+    const result = schema.safeParse(value);
+    if (!result.success) {
+      console.warn(`[Speicher] „${key}“ war ungültig und wurde zurückgesetzt. Grund: ${describeIssues(result.error)}`);
+      try {
+        localStorage.setItem(`${key}.backup`, JSON.stringify(raw));
+      } catch {
+        /* ignorieren */
+      }
+      const fb = seed ? seed() : fallback();
+      docCache.set(key, fb);
+      return fb;
+    }
+    if (value !== raw) docCache.set(key, value);
+    return value as T;
+  };
+
+  const update = (fn: (value: T) => T) => {
+    const next = fn(read());
+    write(next);
+    return next;
+  };
+
+  const use = (): T => {
+    const [value, setValue] = useState<T>(read);
+    useEffect(() => {
+      const onLocal = (e: Event) => (e as CustomEvent<string>).detail === key && setValue(read());
+      window.addEventListener(EVENT, onLocal);
+      return () => window.removeEventListener(EVENT, onLocal);
+    }, []);
+    return value;
+  };
+
+  return { key, read, write, update, use };
+}
+
+/** Persönliche Speicher pro Konto (z. B. Finanzdaten) – auf dem Server gesichert. */
 export function defineUserStore<T>(prefix: string, opts: Omit<StoreOptions<T>, 'key'>) {
   const cache = new Map<string, Store<T>>();
   const forUser = (userId: string) => {
-    if (!cache.has(userId)) cache.set(userId, defineStore({ ...opts, key: `${prefix}${userId}` }));
+    if (!cache.has(userId)) cache.set(userId, defineServerStore({ ...opts, key: `${prefix}${userId}` }));
     return cache.get(userId)!;
   };
   /** Hook-Variante: wechselt automatisch mit der userId. */
@@ -129,15 +240,9 @@ export function defineUserStore<T>(prefix: string, opts: Omit<StoreOptions<T>, '
     const [value, setValue] = useState<T>(store.read);
     useEffect(() => {
       setValue(store.read());
-      const refresh = () => setValue(store.read());
-      const onLocal = (e: Event) => (e as CustomEvent<string>).detail === store.key && refresh();
-      const onStorage = (e: StorageEvent) => e.key === store.key && refresh();
+      const onLocal = (e: Event) => (e as CustomEvent<string>).detail === store.key && setValue(store.read());
       window.addEventListener(EVENT, onLocal);
-      window.addEventListener('storage', onStorage);
-      return () => {
-        window.removeEventListener(EVENT, onLocal);
-        window.removeEventListener('storage', onStorage);
-      };
+      return () => window.removeEventListener(EVENT, onLocal);
     }, [store]);
     return value;
   };

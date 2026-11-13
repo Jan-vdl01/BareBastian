@@ -9,3 +9,6 @@ coverage/
 standalone/
 dist-standalone-tmp/
 BareBastian-WebApp.zip
+dist-server/
+data/
+release/

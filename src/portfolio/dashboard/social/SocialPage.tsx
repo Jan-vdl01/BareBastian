@@ -6,7 +6,7 @@ import { navigate } from '../../router';
 import { ProfileAvatar, ProfileName } from '../profile/ProfileAvatar';
 import { PostCard } from './PostCard';
 import { PostComposer } from './PostComposer';
-import { ensureMember, exploreFeed, followersOf, followingFeed, followingOf, suggestions, toggleFollow, trendingTags, useSocial, type SocialPost } from './socialStore';
+import { exploreFeed, followersOf, followingFeed, followingOf, suggestions, toggleFollow, trendingTags, useSocial, type SocialPost } from './socialStore';
 
 type Tab = 'following' | 'explore';
 
@@ -39,10 +39,6 @@ export function SocialPage({ query }: { query: URLSearchParams }) {
   const tab: Tab = query.get('tab') === 'explore' || tag ? 'explore' : 'following';
   const [composer, setComposer] = useState<{ editing?: SocialPost } | null>(null);
   const [limit, setLimit] = useState(15);
-
-  useEffect(() => {
-    if (me) ensureMember(me);
-  }, [me]);
 
   const feed = useMemo(() => (tab === 'following' ? followingFeed(social, me) : exploreFeed(social, me, tag)), [social, me, tab, tag]);
   const sugg = useMemo(() => suggestions(social, me), [social, me, profiles]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -211,7 +207,7 @@ export function SocialPage({ query }: { query: URLSearchParams }) {
             {!trends.length && <li className="text-sm text-slate-500">Noch keine Trends.</li>}
           </ul>
         </section>
-        <p className="px-2 text-[11px] leading-relaxed text-slate-600">Demo: Posts werden in diesem Browser gespeichert. Demo-Mitglieder reagieren automatisch auf neue Posts.</p>
+        <p className="px-2 text-[11px] leading-relaxed text-slate-600">Sei freundlich – es gelten die <a href="#/rechtliches?seite=nutzungsbedingungen" className="underline hover:text-slate-400">Community-Regeln</a>.</p>
       </aside>
 
       {composer && <PostComposer editing={composer.editing} onClose={() => setComposer(null)} />}

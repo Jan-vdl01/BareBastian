@@ -29,7 +29,7 @@ export function DashboardHome() {
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-white">
-              <CrownIcon size={14} /> {isAdmin ? 'Admin-Zugang' : sub ? `${getPlan(sub.plan).name}-Abo ${sub.status === 'canceled' ? '· gekündigt' : 'aktiv'}` : 'Abo'}
+              <CrownIcon size={14} /> {isAdmin ? 'Admin-Zugang' : sub ? `${getPlan(sub.plan).name}-Abo aktiv` : 'Abo'}
             </p>
             <h2 className="mt-4 font-oswald text-3xl tracking-wide text-white sm:text-4xl">Willkommen zurück, {user.displayName}!</h2>
             <p className="mt-2 text-blue-100">

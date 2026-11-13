@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { LegalModal } from '../components/LegalModal';
+import { LegalContent, LegalModal } from '../components/LegalModal';
 import type { LegalModalType } from '../types';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { FaqAccordion } from './components/FaqAccordion';
 import { InfoDrawer } from './components/InfoDrawer';
 import { LearnlyHero } from './components/LearnlyHero';
-import { LoginPage } from './components/LoginPage';
+import { LoginPage, ResetPasswordPage, VerifyEmailPage } from './components/LoginPage';
 import { Navbar } from './components/Navbar';
 import { PricingTeaser } from './components/PricingTeaser';
 import { ParticleBackground } from './components/ParticleBackground';
@@ -84,7 +84,25 @@ function Router() {
 
   if (redirect) return null;
 
-  if (route.path === '/login') return <LoginPage />;
+  if (route.path === '/login') return <LoginPage query={route.query} />;
+  if (route.path === '/passwort-reset') return <ResetPasswordPage query={route.query} />;
+  if (route.path === '/email-bestaetigen') return <VerifyEmailPage query={route.query} />;
+  if (route.path === '/rechtliches') {
+    const seite = route.query.get('seite');
+    const type = seite === 'datenschutz' ? 'privacy' : seite === 'nutzungsbedingungen' ? 'terms' : 'impressum';
+    return (
+      <PublicShell>
+        {(openContact) => (
+          <>
+            <Navbar onOpenContact={openContact} />
+            <main className="mx-auto max-w-3xl px-5 pb-16 pt-32 text-sm leading-relaxed">
+              <LegalContent type={type} />
+            </main>
+          </>
+        )}
+      </PublicShell>
+    );
+  }
   if (route.path === '/abo') return <SubscribePage query={route.query} />;
   if (route.path === '/preise') {
     return (

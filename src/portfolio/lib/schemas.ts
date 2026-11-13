@@ -97,7 +97,6 @@ export const profileSchema = z.object({
   socials: z.object({ instagram: z.string().optional(), x: z.string().optional(), telegram: z.string().optional() }),
   joinedAt: z.string(),
   role: z.enum(['member', 'admin']),
-  isDemo: z.boolean().optional(),
 });
 export const profilesSchema = z.record(z.string(), profileSchema);
 

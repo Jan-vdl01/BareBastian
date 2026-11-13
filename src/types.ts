@@ -35,4 +35,4 @@ export interface SubscriptionTier {
   highlightText?: string;
 }
 
-export type LegalModalType = 'none' | 'impressum' | 'privacy' | 'newsletter' | 'share';
+export type LegalModalType = 'none' | 'impressum' | 'privacy' | 'terms';

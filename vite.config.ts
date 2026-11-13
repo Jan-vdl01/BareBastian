@@ -12,6 +12,8 @@ export default defineConfig(() => {
       },
     },
     server: {
+      // API-Anfragen im Entwicklungsmodus an den lokalen Server (bun run dev:server) weiterleiten
+      proxy: { '/api': 'http://127.0.0.1:3000' },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',

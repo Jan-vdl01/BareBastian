@@ -1,12 +1,10 @@
 import { useMemo } from 'react';
-import { getProfile } from '../../auth/userDirectory';
-import { uid } from '../../lib/localStore';
-import { chatSchema } from '../../lib/schemas';
-import { defineStore } from '../../lib/store';
+import { api } from '../../lib/api';
+import { remoteResource } from '../../lib/remote';
 
 /**
- * Chat-Nachrichten (Demo: im Browser gespeichert, synchron zwischen Tabs).
- * Für echte Kommunikation zwischen Geräten wird ein Server (z. B. WebSocket) benötigt.
+ * Chat-Nachrichten zwischen Mitgliedern und mit BAREBASTIAN (Server).
+ * Neue Nachrichten werden regelmäßig abgefragt – im geöffneten Chat alle 4 Sekunden.
  */
 export interface Message {
   id: string;
@@ -23,46 +21,43 @@ export interface Conversation {
   unread: number;
 }
 
-const KEY = 'bb_chat';
 export const MAX_MESSAGE_LENGTH = 1000;
 
-const chatStore = defineStore<Message[]>({ key: KEY, schema: chatSchema, fallback: () => [] });
-const readAll = chatStore.read;
-const writeJSON = (_key: string, value: Message[]) => chatStore.write(value);
+/** Nachrichten, an denen ich beteiligt bin (vom Server). */
+export const chatResource = remoteResource<Message[]>('/chat', () => [], 30000);
+
+const fail = (err: unknown) => {
+  chatResource.refresh();
+  alert(err instanceof Error ? err.message : 'Die Nachricht konnte nicht gesendet werden.');
+};
 
 export function sendMessage(from: string, to: string, rawText: string): Message | null {
   const text = rawText.trim().slice(0, MAX_MESSAGE_LENGTH);
   if (!text || from === to) return null;
-  const msg: Message = { id: uid('m-'), from, to, text, at: new Date().toISOString() };
-  writeJSON(KEY, [...readAll(), msg]);
+  const msg: Message = { id: `tmp-${Date.now()}`, from, to, text, at: new Date().toISOString() };
+  chatResource.set([...chatResource.get(), msg]); // sofort anzeigen
+  api.post<Message[]>('/chat', { to, text }).then(chatResource.set).catch(fail);
   return msg;
 }
 
 export function markConversationRead(me: string, other: string) {
-  const all = readAll();
-  let changed = false;
+  if (!chatResource.get().some((m) => m.from === other && m.to === me && !m.readAt)) return;
   const now = new Date().toISOString();
-  const next = all.map((m) => {
-    if (m.from === other && m.to === me && !m.readAt) {
-      changed = true;
-      return { ...m, readAt: now };
-    }
-    return m;
-  });
-  if (changed) writeJSON(KEY, next);
+  chatResource.set(chatResource.get().map((m) => (m.from === other && m.to === me && !m.readAt ? { ...m, readAt: now } : m)));
+  api.post<Message[]>('/chat/read', { other }).then(chatResource.set).catch(() => undefined);
 }
 
+/** Unterhaltung für mich ausblenden. */
 export function deleteConversation(me: string, other: string) {
-  writeJSON(
-    KEY,
-    readAll().filter((m) => !((m.from === me && m.to === other) || (m.from === other && m.to === me))),
-  );
+  chatResource.set(chatResource.get().filter((m) => !((m.from === me && m.to === other) || (m.from === other && m.to === me))));
+  api.del<Message[]>(`/chat/${other}`).then(chatResource.set).catch(fail);
 }
 
-export const useAllMessages = () => chatStore.use();
+/** Im Chat selbst wird häufiger nachgeladen. */
+export const useAllMessages = (intervalMs?: number) => chatResource.use(intervalMs);
 
 export function useConversations(me: string | undefined): Conversation[] {
-  const all = useAllMessages();
+  const all = useAllMessages(4000);
   return useMemo(() => {
     if (!me) return [];
     const map = new Map<string, Conversation>();
@@ -79,7 +74,7 @@ export function useConversations(me: string | undefined): Conversation[] {
 }
 
 export function useThread(me: string | undefined, other: string | undefined): Message[] {
-  const all = useAllMessages();
+  const all = useAllMessages(4000);
   return useMemo(
     () => (me && other ? all.filter((m) => (m.from === me && m.to === other) || (m.from === other && m.to === me)) : []),
     [all, me, other],
@@ -89,35 +84,4 @@ export function useThread(me: string | undefined, other: string | undefined): Me
 export function useUnreadCount(me: string | undefined): number {
   const all = useAllMessages();
   return useMemo(() => (me ? all.filter((m) => m.to === me && !m.readAt).length : 0), [all, me]);
-}
-
-/* ---------- Demo-Mitglieder antworten automatisch ---------- */
-
-const DEMO_REPLIES = [
-  'Hey! Schön, von dir zu hören 😊',
-  'Haha, das sehe ich genauso!',
-  'Klingt gut – erzähl mehr!',
-  'Hast du den letzten Stream gesehen? War richtig gut.',
-  'Danke dir, wünsch dir einen schönen Tag! ✨',
-  'Oh cool, das wusste ich noch gar nicht.',
-  'Bin gerade unterwegs, melde mich später nochmal 👋',
-];
-
-const pending = new Set<string>();
-
-/** Plant eine Antwort, wenn der Empfänger ein Demo-Profil ist. Liefert true, wenn geantwortet wird. */
-export function scheduleDemoReply(from: string, demoId: string, onTyping?: (typing: boolean) => void): boolean {
-  const demo = getProfile(demoId);
-  if (!demo?.isDemo || pending.has(demoId)) return false;
-  pending.add(demoId);
-  setTimeout(() => {
-    markConversationRead(demoId, from);
-    onTyping?.(true);
-  }, 700);
-  setTimeout(() => {
-    sendMessage(demoId, from, DEMO_REPLIES[Math.floor(Math.random() * DEMO_REPLIES.length)]);
-    onTyping?.(false);
-    pending.delete(demoId);
-  }, 2200 + Math.random() * 1200);
-  return true;
 }

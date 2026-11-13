@@ -1,22 +1,45 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
-import { formatEuro, PLAN_FEATURES, PLANS, type PlanId } from '../config/plans';
+import { authApi, type PublicConfig } from '../auth/authService';
+import { formatEuro, getPlan, PLAN_FEATURES, PLANS, type PlanId } from '../config/plans';
 import { PROFILE } from '../data';
-import { ArrowLeft, CheckIcon, CrownIcon, LockIcon, LogoutIcon } from '../icons';
+import { ArrowLeft, CheckIcon, ClockIcon, CrownIcon, ExternalLink, LockIcon, LogoutIcon } from '../icons';
+import { errorText } from '../lib/api';
 import { navigate } from '../router';
+import { formatDate } from '../dashboard/libraryData';
 
 /** Paywall: Nur mit aktivem Abo geht es weiter in den Abo-Bereich. */
 export function SubscribePage({ query }: { query: URLSearchParams }) {
-  const { user, subscribe, logout } = useAuth();
+  const { user, requestSubscription, withdrawRequest, refreshUser, logout } = useAuth();
   const requested = query.get('plan');
   const [selected, setSelected] = useState<PlanId>(PLANS.some((p) => p.id === requested) ? (requested as PlanId) : 'quarterly');
   const [busy, setBusy] = useState(false);
+  const [consent, setConsent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [config, setConfig] = useState<PublicConfig | null>(null);
+  const pending = user?.pendingRequest;
+  const expired = user?.subscription && new Date(user.subscription.renewsAt) <= new Date();
 
-  const handleSubscribe = async () => {
+  useEffect(() => {
+    authApi.config().then(setConfig).catch(() => undefined);
+  }, []);
+
+  // Während eine Anfrage offen ist, regelmäßig prüfen, ob das Abo freigeschaltet wurde
+  useEffect(() => {
+    if (!pending) return;
+    const t = setInterval(() => document.visibilityState === 'visible' && refreshUser(), 30000);
+    return () => clearInterval(t);
+  }, [pending, refreshUser]);
+
+  const handleRequest = async () => {
+    if (!consent) return setError('Bitte bestätige den Hinweis zum Widerrufsrecht.');
     setBusy(true);
+    setError(null);
     try {
-      await subscribe(selected);
-      navigate('/abo-bereich');
+      await requestSubscription(selected);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -55,6 +78,40 @@ export function SubscribePage({ query }: { query: URLSearchParams }) {
           </p>
         </div>
 
+        {pending && (
+          <section className="mx-auto mt-10 max-w-xl rounded-3xl border border-cyan-400/30 bg-cyan-400/[0.06] p-6 backdrop-blur-xl sm:p-8" aria-live="polite">
+            <div className="flex items-center gap-3">
+              <span className="grid h-11 w-11 place-items-center rounded-xl bg-cyan-400/15 text-cyan-200">
+                <ClockIcon size={20} />
+              </span>
+              <div>
+                <p className="font-oswald text-xl tracking-wide text-white">Anfrage gesendet</p>
+                <p className="text-sm text-slate-400">
+                  {getPlan(pending.plan).name} · {formatEuro(getPlan(pending.plan).price)} · am {formatDate(pending.createdAt)}
+                </p>
+              </div>
+            </div>
+            <p className="mt-5 whitespace-pre-line text-sm leading-relaxed text-slate-300">{config?.payment.info ?? 'Du erhältst die Zahlungsinformationen per E-Mail.'}</p>
+            {config?.payment.links[pending.plan] && (
+              <a href={config.payment.links[pending.plan]} target="_blank" rel="noopener noreferrer" className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 px-5 py-3.5 text-sm font-semibold text-white">
+                Jetzt bezahlen <ExternalLink size={16} />
+              </a>
+            )}
+            <p className="mt-4 text-xs text-slate-500">Sobald die Zahlung eingegangen ist, wird dein Abo freigeschaltet und du bekommst eine E-Mail. Diese Seite aktualisiert sich automatisch.</p>
+            <button type="button" onClick={() => withdrawRequest().catch(() => undefined)} className="mt-4 text-xs text-slate-400 underline-offset-4 hover:text-white hover:underline">
+              Anfrage zurückziehen / anderes Paket wählen
+            </button>
+          </section>
+        )}
+
+        {expired && !pending && (
+          <p className="mx-auto mt-8 max-w-xl rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 text-center text-sm text-amber-100">
+            Dein Abo ist am {formatDate(user!.subscription!.renewsAt)} abgelaufen. Wähle ein Paket, um es zu verlängern.
+          </p>
+        )}
+
+        {!pending && (
+        <>
         <div className="mt-12 grid gap-4 md:grid-cols-3" role="radiogroup" aria-label="Abo-Paket wählen">
           {PLANS.map((plan) => {
             const active = plan.id === selected;
@@ -105,28 +162,38 @@ export function SubscribePage({ query }: { query: URLSearchParams }) {
           </ul>
 
           {user ? (
-            <button
-              type="button"
-              onClick={handleSubscribe}
-              disabled={busy}
-              className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/40 active:scale-[0.98] disabled:cursor-wait disabled:opacity-70"
-            >
-              {busy ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <CrownIcon size={18} />}
-              {busy ? 'Abo wird aktiviert …' : `Abo abschließen – ${formatEuro(PLANS.find((p) => p.id === selected)!.price)}`}
-            </button>
+            <>
+              <label className="mt-6 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-slate-400">
+                <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-cyan-400" />
+                Ich stimme ausdrücklich zu, dass der Zugang zu den digitalen Inhalten vor Ablauf der Widerrufsfrist freigeschaltet wird. Mir ist bekannt, dass ich dadurch mein Widerrufsrecht verliere.
+              </label>
+              {error && (
+                <p role="alert" className="mt-4 rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-sm text-rose-200">
+                  {error}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={handleRequest}
+                disabled={busy}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/40 active:scale-[0.98] disabled:cursor-wait disabled:opacity-70"
+              >
+                {busy ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <CrownIcon size={18} />}
+                {busy ? 'Wird gesendet …' : `Abo anfragen – ${formatEuro(getPlan(selected).price)}`}
+              </button>
+              <p className="mt-3 text-center text-xs text-slate-500">Keine automatische Verlängerung. Die Zahlungsinformationen bekommst du nach der Anfrage.</p>
+            </>
           ) : (
             <a
-              href={`#/login?next=${encodeURIComponent(`/abo?plan=${selected}`)}`}
+              href={`#/login?mode=register&next=${encodeURIComponent(`/abo?plan=${selected}`)}`}
               className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/30"
             >
-              <LockIcon size={16} /> Erst anmelden, dann abonnieren
+              <LockIcon size={16} /> Konto erstellen oder anmelden
             </a>
           )}
-
-          <p className="mt-4 rounded-lg border border-amber-300/20 bg-amber-300/5 px-3 py-2 text-center text-xs text-amber-100/80">
-            Demo-Modus: Es wird nichts berechnet. Die Zahlungsanbindung (z. B. Stripe) folgt.
-          </p>
         </div>
+        </>
+        )}
       </div>
     </main>
   );

@@ -1,12 +1,11 @@
 /**
- * Social Hub (Demo: localStorage + IndexedDB für Bilder, geteilt zwischen Konten in diesem Browser).
+ * Social Hub – Posts, Likes, Kommentare, Umfragen und Follows aller Mitglieder (Server).
+ * Bilder werden als Dateien hochgeladen (siehe lib/api.ts → uploadFile).
  */
 import { getProfile, listProfiles, type Profile } from '../../auth/userDirectory';
 import { CREATOR_ID } from '../../config/admin';
-import { uid } from '../../lib/localStore';
-import { socialSchema } from '../../lib/schemas';
-import { defineStore } from '../../lib/store';
-import { deleteMedia } from '../../lib/mediaDb';
+import { api } from '../../lib/api';
+import { remoteResource } from '../../lib/remote';
 import type { FontId } from '../bio-builder/themes';
 
 export interface PostDesign {
@@ -51,14 +50,13 @@ export interface SocialPost {
   editedAt?: string;
 }
 
-interface SocialState {
+export interface SocialState {
   version: 1;
   posts: SocialPost[];
   /** userId → IDs, denen dieser User folgt */
   follows: Record<string, string[]>;
 }
 
-const KEY = 'bb_social';
 export const MAX_POST_LENGTH = 2000;
 export const MAX_IMAGES = 4;
 
@@ -69,71 +67,14 @@ export const DEFAULT_DESIGN: PostDesign = { bg: 'none', size: 16, align: 'left' 
 const TAG_RE = /(^|[^\p{L}\d_&#])#([\p{L}\d_]{2,30})/gu;
 export const extractTags = (text: string) => [...new Set([...text.matchAll(TAG_RE)].map((m) => m[2].toLowerCase()))].slice(0, 15);
 
-/* ---------- Startdaten ---------- */
+const empty = (): SocialState => ({ version: 1, posts: [], follows: {} });
 
-const hoursAgo = (h: number) => new Date(Date.now() - h * 3600000).toISOString();
+/** Social-Daten vom Server (nur Posts, die man sehen darf). */
+export const socialResource = remoteResource<SocialState>('/social', empty, 20000);
+const read = () => socialResource.get();
+const apply = (state: SocialState) => socialResource.set(state);
 
-function seed(): SocialState {
-  const post = (authorId: string, h: number, text: string, design: Partial<PostDesign> = {}, extra: Partial<SocialPost> = {}): SocialPost => ({
-    id: uid('sp-'),
-    authorId,
-    text,
-    design: { ...DEFAULT_DESIGN, ...design },
-    images: [],
-    poll: null,
-    tags: extractTags(text),
-    visibility: 'public',
-    likes: [],
-    comments: [],
-    createdAt: hoursAgo(h),
-    ...extra,
-  });
-  const posts: SocialPost[] = [
-    post(CREATOR_ID, 2, 'Heute Abend ab 21 Uhr live! 🔥 Wer ist dabei? #livestream #heuteabend', { bg: 'fire', size: 24, align: 'center' }, { likes: ['demo-lukas', 'demo-mia', 'demo-tom'] }),
-    post('demo-mia', 5, 'Neues Fotoprojekt gestartet 📸 Ich teste gerade Lichtsetups mit nur einer Lampe. Wer hat Tipps? #fotografie #licht'),
-    post('demo-tom', 9, 'Was soll ich als Nächstes zocken? 🎮 #gaming', {}, {
-      poll: { endsAt: null, options: [
-        { id: 'o1', text: 'Horror-Game', votes: ['demo-lukas', 'demo-jonas'] },
-        { id: 'o2', text: 'Rennspiel', votes: ['demo-mia'] },
-        { id: 'o3', text: 'Retro-Klassiker', votes: [] },
-      ] },
-      likes: ['demo-jonas'],
-    }),
-    post('demo-lukas', 14, '[b]Gym-Update:[/b] neuer Rekord beim Kreuzheben 💪 Disziplin schlägt Motivation. #gym #fitness', { bg: 'midnight', size: 20 }, { likes: ['demo-tom', CREATOR_ID] }),
-    post('demo-jonas', 20, 'Sonntag = Kochtag. Heute gibt es selbstgemachte Ramen 🍜 Rezept in den Kommentaren? #kochen #sonntag', {}, {
-      comments: [{ id: uid('c-'), authorId: 'demo-mia', text: 'Ja bitte! 😍', createdAt: hoursAgo(19) }],
-      likes: ['demo-mia'],
-    }),
-    post(CREATOR_ID, 30, 'Danke für 1.000 Follower! ❤️ Ihr seid die Besten. #danke #community', { bg: 'aurora', size: 26, align: 'center' }, { likes: ['demo-lukas', 'demo-mia', 'demo-tom', 'demo-jonas'] }),
-    post('demo-mia', 48, '[i]„Licht ist alles.“[/i] – mein Motto für diese Woche ✨ #fotografie #kunst', { bg: 'paper', size: 22, align: 'center', font: 'serif' }),
-    post('demo-tom', 60, 'Nachtschicht mit Pizza und Stream 🍕 Wer ist noch wach? #gaming #nachteule', { bg: 'neon', size: 20 }),
-  ];
-  return {
-    version: 1,
-    posts,
-    follows: {
-      'demo-lukas': [CREATOR_ID, 'demo-tom', 'demo-jonas'],
-      'demo-mia': [CREATOR_ID, 'demo-jonas'],
-      'demo-tom': [CREATOR_ID, 'demo-lukas'],
-      'demo-jonas': [CREATOR_ID, 'demo-mia', 'demo-lukas'],
-      [CREATOR_ID]: [],
-    },
-  };
-}
-
-const store = defineStore<SocialState>({ key: KEY, schema: socialSchema, fallback: seed, seed });
-
-const read = store.read;
-const write = store.write;
-const update = (fn: (s: SocialState) => SocialState) => store.update(fn);
-
-export const useSocial = (): SocialState => store.use();
-
-/** Neue Mitglieder folgen anfangs BAREBASTIAN. */
-export function ensureMember(userId: string) {
-  const s = read();
-  if (!s.follows[userId]) write({ ...s, follows: { ...s.follows, [userId]: userId === CREATOR_ID ? [] : [CREATOR_ID] } });
-}
+export const useSocial = (): SocialState => socialResource.use();
 
 /* ---------- Posts ---------- */
 
@@ -145,54 +86,62 @@ export interface PostInput {
   visibility: SocialPost['visibility'];
 }
 
-export function savePost(authorId: string, input: PostInput, id?: string): SocialPost {
-  const now = new Date().toISOString();
-  let saved!: SocialPost;
-  update((s) => {
-    const existing = id ? s.posts.find((p) => p.id === id) : undefined;
-    if (existing) {
-      saved = { ...existing, ...input, text: input.text.slice(0, MAX_POST_LENGTH), tags: extractTags(input.text), editedAt: now };
-      return { ...s, posts: s.posts.map((p) => (p.id === id ? saved : p)) };
-    }
-    saved = { id: uid('sp-'), authorId, ...input, text: input.text.slice(0, MAX_POST_LENGTH), tags: extractTags(input.text), likes: [], comments: [], createdAt: now };
-    return { ...s, posts: [saved, ...s.posts] };
-  });
-  return saved;
+const toServer = (input: PostInput) => ({
+  ...input,
+  text: input.text.slice(0, MAX_POST_LENGTH),
+  poll: input.poll ? { endsAt: input.poll.endsAt, options: input.poll.options.map(({ id, text }) => ({ id, text })) } : null,
+});
+
+export async function savePost(_authorId: string, input: PostInput, id?: string): Promise<SocialPost> {
+  const res = id ? await api.put<{ id: string; state: SocialState }>(`/social/posts/${id}`, toServer(input)) : await api.post<{ id: string; state: SocialState }>('/social/posts', toServer(input));
+  apply(res.state);
+  return res.state.posts.find((p) => p.id === res.id)!;
 }
 
 export async function deletePost(id: string) {
-  const post = read().posts.find((p) => p.id === id);
-  if (post) await Promise.all(post.images.map((ref) => deleteMedia(ref).catch(() => undefined)));
-  update((s) => ({ ...s, posts: s.posts.filter((p) => p.id !== id) }));
+  apply(await api.del<SocialState>(`/social/posts/${id}`));
 }
 
-const patchPost = (id: string, fn: (p: SocialPost) => SocialPost) => update((s) => ({ ...s, posts: s.posts.map((p) => (p.id === id ? fn(p) : p)) }));
+const patchLocal = (id: string, fn: (p: SocialPost) => SocialPost) => apply({ ...read(), posts: read().posts.map((p) => (p.id === id ? fn(p) : p)) });
+const act = (path: string, body: unknown = {}) =>
+  api
+    .post<SocialState>(path, body)
+    .then(apply)
+    .catch((err) => {
+      socialResource.refresh();
+      alert(err instanceof Error ? err.message : 'Aktion fehlgeschlagen.');
+    });
 
-export const toggleLike = (postId: string, userId: string) => patchPost(postId, (p) => ({ ...p, likes: p.likes.includes(userId) ? p.likes.filter((x) => x !== userId) : [...p.likes, userId] }));
+export function toggleLike(postId: string, userId: string) {
+  patchLocal(postId, (p) => ({ ...p, likes: p.likes.includes(userId) ? p.likes.filter((x) => x !== userId) : [...p.likes, userId] }));
+  return act(`/social/posts/${postId}/like`);
+}
 
-export function addComment(postId: string, authorId: string, text: string) {
+export function addComment(postId: string, _authorId: string, text: string) {
   const t = text.trim().slice(0, 500);
-  if (!t) return;
-  patchPost(postId, (p) => ({ ...p, comments: [...p.comments, { id: uid('c-'), authorId, text: t, createdAt: new Date().toISOString() }] }));
+  if (!t) return Promise.resolve();
+  return act(`/social/posts/${postId}/comments`, { text: t });
 }
-export const deleteComment = (postId: string, commentId: string) => patchPost(postId, (p) => ({ ...p, comments: p.comments.filter((c) => c.id !== commentId) }));
+
+export const deleteComment = (postId: string, commentId: string) =>
+  api
+    .del<SocialState>(`/social/posts/${postId}/comments/${commentId}`)
+    .then(apply)
+    .catch(() => socialResource.refresh());
 
 export function vote(postId: string, optionId: string, userId: string) {
-  patchPost(postId, (p) =>
-    p.poll && (!p.poll.endsAt || new Date(p.poll.endsAt) > new Date())
-      ? { ...p, poll: { ...p.poll, options: p.poll.options.map((o) => ({ ...o, votes: o.id === optionId ? [...o.votes.filter((v) => v !== userId), userId] : o.votes.filter((v) => v !== userId) })) } }
-      : p,
-  );
+  patchLocal(postId, (p) => (p.poll ? { ...p, poll: { ...p.poll, options: p.poll.options.map((o) => ({ ...o, votes: o.id === optionId ? [...o.votes.filter((v) => v !== userId), userId] : o.votes.filter((v) => v !== userId) })) } } : p));
+  return act(`/social/posts/${postId}/vote`, { optionId });
 }
 
 /* ---------- Folgen ---------- */
 
 export function toggleFollow(userId: string, targetId: string) {
-  if (userId === targetId) return;
-  update((s) => {
-    const list = s.follows[userId] ?? [];
-    return { ...s, follows: { ...s.follows, [userId]: list.includes(targetId) ? list.filter((x) => x !== targetId) : [...list, targetId] } };
-  });
+  if (userId === targetId) return Promise.resolve();
+  const s = read();
+  const list = s.follows[userId] ?? [];
+  apply({ ...s, follows: { ...s.follows, [userId]: list.includes(targetId) ? list.filter((x) => x !== targetId) : [...list, targetId] } });
+  return act(`/social/follow/${targetId}`);
 }
 
 export const followingOf = (s: SocialState, userId: string) => s.follows[userId] ?? [];
@@ -265,24 +214,4 @@ export function suggestions(s: SocialState, viewer: string, limit = 5): Suggesti
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
-}
-
-/* ---------- Demo-Reaktionen ---------- */
-
-/** Demo-Mitglieder reagieren nach kurzer Zeit auf neue Posts (nur Demo). */
-export function scheduleDemoReactions(postId: string) {
-  const demos = listProfiles().filter((p) => p.isDemo).sort(() => Math.random() - 0.5);
-  demos.slice(0, 1 + Math.floor(Math.random() * 3)).forEach((d, i) => {
-    setTimeout(() => {
-      const p = read().posts.find((x) => x.id === postId);
-      if (p && !p.likes.includes(d.id)) toggleLike(postId, d.id);
-    }, 1800 + i * 1400);
-  });
-  const commenter = demos[0];
-  if (commenter && Math.random() < 0.7) {
-    const lines = ['Mega! 🔥', 'Richtig stark 👏', 'Bin dabei! 😄', 'Love it ❤️', 'Haha, genau so! 😂'];
-    setTimeout(() => {
-      if (read().posts.some((x) => x.id === postId)) addComment(postId, commenter.id, lines[Math.floor(Math.random() * lines.length)]);
-    }, 4200);
-  }
 }

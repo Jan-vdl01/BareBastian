@@ -1,5 +1,5 @@
 /**
- * Finanz-Tool: Einnahmen pro Stream (Demo: localStorage, pro Benutzer getrennt).
+ * Finanz-Tool: Einnahmen pro Stream (pro Benutzer auf dem Server gespeichert).
  */
 import { uid } from '../../lib/localStore';
 import { csvRowSchema, financeSchema } from '../../lib/schemas';

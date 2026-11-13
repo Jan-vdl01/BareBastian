@@ -9,7 +9,6 @@ import {
   deleteConversation,
   markConversationRead,
   MAX_MESSAGE_LENGTH,
-  scheduleDemoReply,
   sendMessage,
   useConversations,
   useThread,
@@ -111,7 +110,7 @@ export function ChatPage({ query }: { query: URLSearchParams }) {
           )}
         </ul>
         <p className="border-t border-white/5 px-4 py-2.5 text-[11px] leading-relaxed text-slate-500">
-          Demo: Nachrichten werden in diesem Browser gespeichert. Demo-Mitglieder antworten automatisch.
+          Nachrichten sehen nur du und dein Gesprächspartner.
         </p>
       </aside>
 
@@ -149,7 +148,6 @@ export function ChatPage({ query }: { query: URLSearchParams }) {
 function Thread({ me, other }: { me: string; other: Profile }) {
   const messages = useThread(me, other.id);
   const [draft, setDraft] = useState('');
-  const [typing, setTyping] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -161,18 +159,16 @@ function Thread({ me, other }: { me: string; other: Profile }) {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length, typing]);
+  }, [messages.length]);
 
   useEffect(() => {
     setDraft('');
-    setTyping(false);
     inputRef.current?.focus();
   }, [other.id]);
 
   const send = () => {
     if (!sendMessage(me, other.id, draft)) return;
     setDraft('');
-    scheduleDemoReply(me, other.id, setTyping);
     inputRef.current?.focus();
   };
 
@@ -204,7 +200,7 @@ function Thread({ me, other }: { me: string; other: Profile }) {
           <ProfileAvatar profile={other} size={40} />
           <span className="min-w-0">
             <ProfileName profile={other} className="text-sm font-semibold text-white" />
-            <span className="block truncate text-xs text-slate-500">{typing ? <span className="text-cyan-300">schreibt …</span> : `@${other.username}`}</span>
+            <span className="block truncate text-xs text-slate-500">@{other.username}</span>
           </span>
         </a>
         {messages.length > 0 &&
@@ -271,15 +267,6 @@ function Thread({ me, other }: { me: string; other: Profile }) {
             })}
           </div>
         ))}
-        {typing && (
-          <div className="flex justify-start">
-            <span className="inline-flex gap-1 rounded-2xl rounded-bl-md border border-white/10 bg-white/[0.06] px-4 py-3">
-              {[0, 1, 2].map((i) => (
-                <span key={i} className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" style={{ animationDelay: `${i * 150}ms` }} />
-              ))}
-            </span>
-          </div>
-        )}
         <div ref={endRef} />
       </div>
 

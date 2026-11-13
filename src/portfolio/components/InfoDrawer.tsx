@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { PROFILE } from '../data';
 import { CheckIcon, MailIcon, SendIcon, XIcon } from '../icons';
 import type { ContactFormState, ContactTopic } from '../types';
+import { api, errorText } from '../lib/api';
 
 interface InfoDrawerProps {
   open: boolean;
@@ -29,7 +30,7 @@ function validate(f: ContactFormState): Errors {
 
 /**
  * Gleitender Info-Drawer: auf Mobilgeräten von unten, ab `md` von rechts.
- * Enthält ein validiertes Kontaktformular (Versand über den Mail-Client).
+ * Enthält ein validiertes Kontaktformular (Versand über den Server).
  */
 export function InfoDrawer({ open, onClose }: InfoDrawerProps) {
   const [form, setForm] = useState<ContactFormState>(EMPTY);
@@ -57,17 +58,26 @@ export function InfoDrawer({ open, onClose }: InfoDrawerProps) {
     if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [honeypot, setHoneypot] = useState('');
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const found = validate(form);
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
-
+    if (Object.keys(found).length > 0 || sending) return;
     const topic = TOPICS.find((t) => t.value === form.topic)?.label ?? 'Anfrage';
-    const subject = encodeURIComponent(`[${topic}] Nachricht von ${form.name}`);
-    const body = encodeURIComponent(`${form.message}\n\n—\n${form.name}\n${form.email}`);
-    window.location.href = `mailto:${PROFILE.email}?subject=${subject}&body=${body}`;
-    setSent(true);
+    setSending(true);
+    setSendError(null);
+    try {
+      await api.post('/contact', { ...form, topic, website: honeypot });
+      setSent(true);
+    } catch (err) {
+      setSendError(`${errorText(err)} Alternativ erreichst du uns per E-Mail an ${PROFILE.email}.`);
+    } finally {
+      setSending(false);
+    }
   };
 
   const reset = () => {
@@ -144,10 +154,8 @@ export function InfoDrawer({ open, onClose }: InfoDrawerProps) {
                   <span className="grid h-14 w-14 place-items-center rounded-full bg-emerald-400/15 text-emerald-300">
                     <CheckIcon size={26} />
                   </span>
-                  <p className="mt-4 font-oswald text-xl text-white">Fast geschafft!</p>
-                  <p className="mt-2 max-w-xs text-sm text-slate-400">
-                    Dein E-Mail-Programm wurde mit deiner Nachricht geöffnet – jetzt nur noch absenden.
-                  </p>
+                  <p className="mt-4 font-oswald text-xl text-white">Nachricht gesendet!</p>
+                  <p className="mt-2 max-w-xs text-sm text-slate-400">Danke dir – ich melde mich so schnell wie möglich per E-Mail.</p>
                   <button type="button" onClick={reset} className="mt-6 text-sm text-cyan-300 underline-offset-4 hover:underline">
                     Neue Nachricht schreiben
                   </button>
@@ -239,14 +247,25 @@ export function InfoDrawer({ open, onClose }: InfoDrawerProps) {
                 {errors.message && <p id={`${uid}-msg-err`} className="mt-1.5 text-xs text-rose-300">{errors.message}</p>}
               </div>
 
+              {/* Für Menschen unsichtbares Feld gegen Spam-Bots */}
+              <input type="text" name="website" tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} className="hidden" aria-hidden="true" />
+              {sendError && (
+                <p role="alert" className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-sm text-rose-200">
+                  {sendError}
+                </p>
+              )}
               <button
                 type="submit"
+                disabled={sending}
                 className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/40 active:scale-[0.98]"
               >
-                Nachricht senden
+                {sending ? 'Wird gesendet …' : 'Nachricht senden'}
                 <SendIcon size={16} className="transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
               </button>
-              <p className="text-center text-[11px] text-slate-500">Der Versand erfolgt über dein E-Mail-Programm.</p>
+              <p className="text-center text-[11px] text-slate-500">
+                Mit dem Absenden werden deine Angaben zur Bearbeitung gespeichert (siehe{' '}
+                <a href="#/rechtliches?seite=datenschutz" className="underline hover:text-slate-300">Datenschutz</a>).
+              </p>
             </form>
           </div>
         </div>

@@ -61,13 +61,16 @@ export function ProfileEditor({ profile, onClose }: { profile: Profile; onClose:
     return e;
   };
 
-  const submit = (ev: FormEvent) => {
+  const [saving, setSaving] = useState(false);
+  const submit = async (ev: FormEvent) => {
     ev.preventDefault();
     const e = validate();
     setErrors(e);
-    if (Object.keys(e).length) return;
+    if (Object.keys(e).length || saving) return;
+    setSaving(true);
+    setSaveError(null);
     try {
-      saveProfile({
+      await saveProfile({
         ...form,
         displayName: form.displayName.trim().slice(0, 40),
         bio: form.bio.trim().slice(0, BIO_MAX),
@@ -78,6 +81,8 @@ export function ProfileEditor({ profile, onClose }: { profile: Profile; onClose:
       onClose();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -196,8 +201,8 @@ export function ProfileEditor({ profile, onClose }: { profile: Profile; onClose:
           <button type="button" onClick={onClose} className="rounded-xl px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5">
             Abbrechen
           </button>
-          <button type="submit" disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
-            <CheckIcon size={16} /> Speichern
+          <button type="submit" disabled={!!busy || saving} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+            <CheckIcon size={16} /> {saving ? "Wird gespeichert …" : "Speichern"}
           </button>
         </footer>
       </form>

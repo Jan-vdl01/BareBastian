@@ -10,14 +10,15 @@ const COMPARISON: { feature: string; free: boolean; vip: boolean }[] = [
   { feature: 'Exklusive Fotoalben', free: false, vip: true },
   { feature: 'VIP-Posts & Updates', free: false, vip: true },
   { feature: 'Modularer Chaturbate-Bio-Baukasten', free: false, vip: true },
-  { feature: '„Weiter ansehen“ auf allen Geräten*', free: false, vip: true },
+  { feature: 'Social Hub & Chat mit der Community', free: false, vip: true },
+  { feature: '„Weiter ansehen“ bei Videos*', free: false, vip: true },
 ];
 
 const BILLING_FAQ = [
-  { q: 'Kann ich jederzeit kündigen?', a: 'Ja. Du kündigst mit einem Klick im Abo-Bereich unter „Profil & Abo“. Bis zum Ende des bezahlten Zeitraums behältst du vollen Zugriff.' },
-  { q: 'Verlängert sich mein Abo automatisch?', a: 'Ja, am Ende der Laufzeit verlängert sich das Abo um den gewählten Zeitraum – außer du hast vorher gekündigt.' },
-  { q: 'Welche Zahlungsarten gibt es?', a: 'Die Zahlungsabwicklung wird gerade eingerichtet. Bis dahin läuft der Abo-Bereich im Demo-Modus, es wird nichts berechnet.' },
-  { q: 'Erscheint der Name auf meiner Abrechnung?', a: 'Die genaue Bezeichnung auf der Abrechnung hängt vom Zahlungsanbieter ab und wird hier ergänzt, sobald er feststeht.' },
+  { q: 'Muss ich kündigen?', a: 'Nein. Das Abo läuft genau für den gebuchten Zeitraum und verlängert sich nicht automatisch. Zum Verlängern stellst du einfach eine neue Anfrage.' },
+  { q: 'Wie läuft die Zahlung ab?', a: 'Du wählst ein Paket und schickst die Anfrage ab. Danach bekommst du die Zahlungsinformationen. Sobald die Zahlung eingegangen ist, wird dein Abo freigeschaltet und du bekommst eine E-Mail.' },
+  { q: 'Wie schnell bin ich freigeschaltet?', a: 'In der Regel innerhalb weniger Stunden nach Zahlungseingang. Den Status siehst du jederzeit unter „Konto & Abo“.' },
+  { q: 'Was passiert mit meinen Daten?', a: 'Dein Konto und deine Inhalte werden auf unserem eigenen Server in der EU gespeichert. Du kannst sie jederzeit herunterladen oder dein Konto löschen.' },
 ];
 
 /** Öffentliche Preisseite für das Abo-Modell. */
@@ -118,7 +119,7 @@ export function PricingPage() {
             </tbody>
           </table>
         </div>
-        <p className="mx-auto mt-3 max-w-3xl text-xs text-slate-500">* Im Demo-Modus wird der Fortschritt pro Browser gespeichert.</p>
+        <p className="mx-auto mt-3 max-w-3xl text-xs text-slate-500">* Der Wiedergabe-Fortschritt wird auf dem jeweiligen Gerät gespeichert.</p>
       </div>
 
       {/* Abrechnungs-FAQ */}
@@ -134,8 +135,9 @@ export function PricingPage() {
         </div>
       </div>
 
-      <p className="mx-auto mt-12 max-w-xl rounded-xl border border-amber-300/20 bg-amber-300/5 px-4 py-3 text-center text-xs text-amber-100/80">
-        Demo-Modus: Preise sind vorläufig, es wird noch nichts berechnet. Alle Preise inkl. MwSt.
+      <p className="mx-auto mt-12 max-w-xl text-center text-xs text-slate-500">
+        Gemäß § 19 UStG wird keine Umsatzsteuer berechnet. Keine automatische Verlängerung. Es gelten die{' '}
+        <a href="#/rechtliches?seite=nutzungsbedingungen" className="underline hover:text-slate-300">Nutzungsbedingungen</a>.
       </p>
     </section>
   );

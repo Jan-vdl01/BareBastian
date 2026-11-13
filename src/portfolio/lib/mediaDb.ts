@@ -1,74 +1,12 @@
-import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import { useEffect, useState } from 'react';
-
 /**
- * Speichert hochgeladene Medien (Videos, Fotos) als Blobs in IndexedDB.
- * Verweise im Inhalt haben die Form "idb:<schlüssel>".
+ * Medien-Helfer. Hochgeladene Dateien liegen auf dem Server (siehe lib/api.ts → uploadFile)
+ * und werden über ihre URL (/api/files/…) direkt angezeigt.
  */
-const DB_NAME = 'bb_media';
-const STORE = 'files';
-export const IDB_PREFIX = 'idb:';
+export const isLocalMedia = (_src?: string) => false;
 
-interface MediaDB extends DBSchema {
-  files: { key: string; value: Blob };
-}
-
-let dbPromise: Promise<IDBPDatabase<MediaDB>> | null = null;
-
-/** Verbindung zur Medien-Datenbank (wird wiederverwendet). */
-function db(): Promise<IDBPDatabase<MediaDB>> {
-  if (!('indexedDB' in window)) return Promise.reject(new Error('IndexedDB wird von diesem Browser nicht unterstützt.'));
-  dbPromise ??= openDB<MediaDB>(DB_NAME, 1, {
-    upgrade(database) {
-      if (!database.objectStoreNames.contains(STORE)) database.createObjectStore(STORE);
-    },
-  }).catch((err) => {
-    dbPromise = null;
-    throw err instanceof Error ? err : new Error('IndexedDB konnte nicht geöffnet werden.');
-  });
-  return dbPromise;
-}
-
-export async function putMedia(key: string, file: Blob): Promise<string> {
-  await (await db()).put(STORE, file, key);
-  return `${IDB_PREFIX}${key}`;
-}
-
-export const getMedia = async (ref: string): Promise<Blob | undefined> => (await db()).get(STORE, ref.slice(IDB_PREFIX.length));
-
-export async function deleteMedia(ref: string | undefined) {
-  if (ref?.startsWith(IDB_PREFIX)) await (await db()).delete(STORE, ref.slice(IDB_PREFIX.length));
-}
-
-export const isLocalMedia = (src?: string) => !!src?.startsWith(IDB_PREFIX);
-
-/** Liefert eine abspielbare URL – lokale Blobs werden in Object-URLs umgewandelt. */
+/** Liefert eine abspielbare URL (Server-Dateien und externe Links werden direkt verwendet). */
 export function useMediaUrl(src: string | undefined): { url: string | undefined; loading: boolean } {
-  const local = isLocalMedia(src);
-  const [state, setState] = useState<{ url: string | undefined; loading: boolean }>({ url: local ? undefined : src, loading: local });
-
-  useEffect(() => {
-    if (!src || !isLocalMedia(src)) {
-      setState({ url: src, loading: false });
-      return;
-    }
-    let objectUrl: string | undefined;
-    let cancelled = false;
-    setState({ url: undefined, loading: true });
-    getMedia(src)
-      .then((blob) => {
-        if (cancelled) return;
-        objectUrl = blob ? URL.createObjectURL(blob) : undefined;
-        setState({ url: objectUrl, loading: false });
-      })
-      .catch(() => !cancelled && setState({ url: undefined, loading: false }));
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [src]);
-
-  return state;
+  return { url: src && !src.startsWith('idb:') ? src : undefined, loading: false };
 }
 
 /** Bild verkleinern und als JPEG-Data-URL zurückgeben (für Avatare, Titelbilder, Vorschaubilder). */

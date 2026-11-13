@@ -1,5 +1,5 @@
 /**
- * Ablage für mehrere Bio-Profile pro Benutzer (Demo: localStorage).
+ * Ablage für mehrere Bio-Profile pro Benutzer (auf dem Server gespeichert).
  * Enthält Ordner, Favoriten-Themes, Versionen und Import/Export.
  */
 import { readJSON, uid } from '../../lib/localStore';

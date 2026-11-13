@@ -931,7 +931,7 @@ export function FinanceSettingsPage() {
         <section className="rounded-2xl border border-white/10 bg-slate-900/50 p-5">
           <h3 className="font-oswald text-lg tracking-wide text-white">Daten</h3>
           <p className="mt-2 text-sm text-slate-400">
-            {data.streams.length} Streams gespeichert. Die Daten liegen im Demo-Modus nur in diesem Browser – sichere sie regelmäßig per CSV-Export unter „Streams“.
+            {data.streams.length} Streams gespeichert. Die Daten sind in deinem Konto gespeichert und nur für dich sichtbar. Zusätzlich kannst du sie jederzeit als CSV exportieren.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" onClick={() => loadSampleData(userId)} className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-slate-200 hover:bg-white/5">

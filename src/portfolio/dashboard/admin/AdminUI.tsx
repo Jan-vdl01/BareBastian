@@ -2,7 +2,8 @@ import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } f
 import { extFor, useContent } from '../../content/ContentContext';
 import { AlertIcon, CheckIcon, PencilIcon, Shield, TrashIcon, UploadIcon, XIcon } from '../../icons';
 import { uid } from '../../lib/localStore';
-import { deleteMedia, formatDuration, isLocalMedia, putMedia, readVideoDuration, resizeImage, useMediaUrl } from '../../lib/mediaDb';
+import { deleteFile as deleteMedia, isServerFile, uploadFile } from '../../lib/api';
+import { formatDuration, readVideoDuration, resizeImage, useMediaUrl } from '../../lib/mediaDb';
 import { placeholderGradient, type PhotoItem, type PostItem, type VideoItem } from '../libraryData';
 import { PhotoTile } from '../MediaViewer';
 
@@ -112,7 +113,7 @@ function Field({ label, children, hint, htmlFor }: { label: string; children: Re
   );
 }
 
-function FormFooter({ busy, error, onClose, submitLabel }: { busy: boolean; error: string | null; onClose: () => void; submitLabel: string }) {
+function FormFooter({ busy, error, onClose, submitLabel, busyLabel }: { busy: boolean; error: string | null; onClose: () => void; submitLabel: string; busyLabel?: string }) {
   return (
     <>
       {error && (
@@ -126,7 +127,7 @@ function FormFooter({ busy, error, onClose, submitLabel }: { busy: boolean; erro
         </button>
         <button type="submit" disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-300 to-orange-500 px-5 py-2.5 text-sm font-semibold text-slate-900 disabled:opacity-60">
           {busy ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-900/30 border-t-slate-900" /> : <CheckIcon size={16} />}
-          {busy ? 'Wird gespeichert …' : submitLabel}
+          {busy ? (busyLabel ?? 'Wird gespeichert …') : submitLabel}
         </button>
       </div>
     </>
@@ -170,7 +171,7 @@ async function uploadPhotoFiles(files: File[], album: string, date: string): Pro
   for (const [i, file] of files.entries()) {
     if (!file.type.startsWith('image/')) continue;
     const id = uid('p-');
-    const src = await putMedia(`photo-${id}`, file);
+    const src = await uploadFile(file, 'library');
     const tall = await new Promise<boolean>((resolve) => {
       const url = URL.createObjectURL(file);
       const img = new Image();
@@ -215,7 +216,8 @@ export function VideoEditor({ video, onClose }: { video?: VideoItem; onClose: ()
   );
   const [file, setFile] = useState<File | null>(null);
   const [posterFile, setPosterFile] = useState<File | null>(null);
-  const [mode, setMode] = useState<'upload' | 'path'>(video?.src && !isLocalMedia(video.src) ? 'path' : 'upload');
+  const [mode, setMode] = useState<'upload' | 'path'>(video?.src && !isServerFile(video.src) ? 'path' : 'upload');
+  const [progress, setProgress] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const categories = useMemo(() => [...new Set(videos.map((v) => v.category))], [videos]);
@@ -241,22 +243,24 @@ export function VideoEditor({ video, onClose }: { video?: VideoItem; onClose: ()
     try {
       const next: VideoItem = { ...form, title: form.title.trim(), category: form.category.trim() || 'Allgemein' };
       if (mode === 'upload' && file) {
-        if (video?.src !== undefined) await deleteMedia(video.src);
-        next.src = await putMedia(`video-${form.id}`, file);
+        setProgress(0);
+        next.src = await uploadFile(file, 'library', setProgress);
+        if (video?.src) await deleteMedia(video.src);
         next.fileExt = extFor(file, 'mp4');
       }
       if (mode === 'path') {
-        if (video?.src && isLocalMedia(video.src)) await deleteMedia(video.src);
+        if (video?.src && isServerFile(video.src)) await deleteMedia(video.src);
         next.src = form.src?.trim() || undefined;
         next.fileExt = undefined;
       }
       if (posterFile) next.poster = await resizeImage(posterFile, 960, 540, 0.8);
-      saveVideo(next);
+      await saveVideo(next);
       onClose();
     } catch (err) {
       setError(errorText(err));
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
@@ -277,8 +281,8 @@ export function VideoEditor({ video, onClose }: { video?: VideoItem; onClose: ()
             {file && <p className="text-xs text-slate-400">{(file.size / 1024 / 1024).toFixed(1)} MB{form.duration ? ` · Länge ${form.duration}` : ''}</p>}
           </>
         ) : (
-          <Field label="Pfad oder URL" hint="z. B. media/videos/mein-video.mp4 – die Datei per FTP neben die index.html laden." htmlFor={`${id}-src`}>
-            <input id={`${id}-src`} className={adminInput} value={form.src ?? ''} onChange={(e) => set('src', e.target.value)} placeholder="media/videos/…" />
+          <Field label="Pfad oder URL" hint="Externe Video-URL (https://…) oder Pfad auf dem Server." htmlFor={`${id}-src`}>
+            <input id={`${id}-src`} className={adminInput} value={form.src ?? ''} onChange={(e) => set('src', e.target.value)} placeholder="https://…" />
           </Field>
         )}
 
@@ -333,7 +337,7 @@ export function VideoEditor({ video, onClose }: { video?: VideoItem; onClose: ()
           </div>
         </Field>
 
-        <FormFooter busy={busy} error={error} onClose={onClose} submitLabel={video ? 'Speichern' : 'Hochladen'} />
+        <FormFooter busy={busy} error={error} onClose={onClose} submitLabel={video ? 'Speichern' : 'Hochladen'} busyLabel={progress !== null ? `Upload ${Math.round(progress * 100)} % …` : undefined} />
       </form>
     </Modal>
   );
@@ -360,7 +364,7 @@ export function PhotoUploader({ onClose, defaultAlbum = '' }: { onClose: () => v
     setBusy(true);
     setError(null);
     try {
-      savePhotos(await uploadPhotoFiles(files, album.trim(), date));
+      await savePhotos(await uploadPhotoFiles(files, album.trim(), date));
       onClose();
     } catch (err) {
       setError(errorText(err));
@@ -418,11 +422,11 @@ export function PhotoEditor({ photo, onClose }: { photo: PhotoItem; onClose: () 
     try {
       const next = { ...form, title: form.title.trim() || photo.title, album: form.album.trim() };
       if (file) {
+        next.src = await uploadFile(file, 'library');
         await deleteMedia(photo.src);
-        next.src = await putMedia(`photo-${photo.id}-${Date.now()}`, file);
         next.fileExt = extFor(file, 'jpg');
       }
-      savePhotos([next]);
+      await savePhotos([next]);
       onClose();
     } catch (err) {
       setError(errorText(err));
@@ -490,10 +494,10 @@ export function PostEditor({ post, onClose }: { post?: PostItem; onClose: () => 
       let photoIds = form.photoIds ?? [];
       if (newFiles.length) {
         const uploaded = await uploadPhotoFiles(newFiles, 'Posts', form.date);
-        savePhotos(uploaded);
+        void savePhotos(uploaded);
         photoIds = [...photoIds, ...uploaded.map((p) => p.id)];
       }
-      savePost({ ...form, text: form.text.trim(), photoIds, videoId: form.videoId || undefined });
+      await savePost({ ...form, text: form.text.trim(), photoIds, videoId: form.videoId || undefined });
       onClose();
     } catch (err) {
       setError(errorText(err));

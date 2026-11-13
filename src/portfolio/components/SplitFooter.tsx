@@ -170,6 +170,9 @@ export function SplitFooter({ onOpenContact, onOpenLegal }: SplitFooterProps) {
                   <UnderlineLink onClick={() => onOpenLegal('privacy')}>Datenschutz</UnderlineLink>
                 </li>
                 <li>
+                  <UnderlineLink onClick={() => onOpenLegal('terms')}>Nutzungsbedingungen</UnderlineLink>
+                </li>
+                <li>
                   <UnderlineLink href={`mailto:${PROFILE.email}`}>{PROFILE.email}</UnderlineLink>
                 </li>
               </ul>
