@@ -24,7 +24,9 @@ import {
 
 export const authRouter = Router();
 
-const authLimit = rateLimit('auth', 12, 15 * 60 * 1000);
+const authLimit = rateLimit('auth', 15, 15 * 60 * 1000, undefined, true);
+/** Neue Konten: höchstens 10 pro Stunde und IP (Schutz vor Massenregistrierung) */
+const registerLimit = rateLimit('register', 10, 60 * 60 * 1000, 'Von dieser Verbindung wurden gerade sehr viele Konten erstellt. Bitte versuche es später erneut.');
 const mailLimit = rateLimit('mail', 5, 60 * 60 * 1000, 'Zu viele E-Mails angefordert. Bitte versuche es später erneut.');
 
 const PASSWORD_MIN = 8;
@@ -71,6 +73,7 @@ authRouter.get('/auth/me', (req, res) => {
 authRouter.post(
   '/auth/register',
   authLimit,
+  ...(process.env.DISABLE_REGISTER_LIMIT === '1' ? [] : [registerLimit]),
   h(async (req, res) => {
     const body = req.body ?? {};
     const email = cleanEmail(body.email);

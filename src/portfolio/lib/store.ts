@@ -143,21 +143,65 @@ export async function hydrateDocs() {
 export function clearDocs() {
   pendingWrites.forEach((t) => clearTimeout(t));
   pendingWrites.clear();
+  failedDocs.clear();
   docCache.clear();
 }
 
-function pushDoc(key: string, keepalive = false) {
+const failedDocs = new Set<string>();
+
+function pushDoc(key: string, keepalive = false, attempt = 0): Promise<void> {
   pendingWrites.delete(key);
   saveListeners.forEach((f) => f('saving'));
+  const body = JSON.stringify({ value: docCache.get(key) ?? null });
+  const sentValue = docCache.get(key);
   return fetch(`/api/docs/${encodeURIComponent(key)}`, {
     method: 'PUT',
-    keepalive,
+    // keepalive erlaubt nur kleine Anfragen (64 KB) – größere normal senden
+    keepalive: keepalive && body.length < 60000,
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', 'X-BB': '1' },
-    body: JSON.stringify({ value: docCache.get(key) ?? null }),
+    body,
   })
-    .then((r) => saveListeners.forEach((f) => f(r.ok ? 'saved' : 'error')))
-    .catch(() => saveListeners.forEach((f) => f('error')));
+    .then((r) => {
+      if (r.ok) {
+        failedDocs.delete(key);
+        if (!failedDocs.size) saveListeners.forEach((f) => f('saved'));
+        return;
+      }
+      // 4xx (z. B. zu groß, abgemeldet) nicht wiederholen
+      if (r.status >= 400 && r.status < 500) throw Object.assign(new Error('rejected'), { final: true });
+      throw new Error('server');
+    })
+    .catch((err: Error & { final?: boolean }) => {
+      if (docCache.get(key) !== sentValue || pendingWrites.has(key)) return; // inzwischen neuere Änderung unterwegs
+      if (!err.final && attempt < 4 && docCache.has(key)) {
+        pendingWrites.set(key, setTimeout(() => pushDoc(key, false, attempt + 1), 2000 * 2 ** attempt));
+        return;
+      }
+      failedDocs.add(key);
+      saveListeners.forEach((f) => f('error'));
+    });
+}
+
+/** Nicht gespeicherte Änderungen erneut senden (z. B. nach Verbindungsproblemen). */
+export function retryFailedDocs() {
+  for (const key of [...failedDocs]) if (docCache.has(key)) pushDoc(key);
+}
+
+/** Stand vom Server neu laden, wenn der Tab wieder sichtbar wird (Änderungen von anderen Geräten). */
+async function refreshDocs() {
+  if (pendingWrites.size || failedDocs.size || !docCache.size) return;
+  try {
+    const docs = await api.get<Record<string, unknown>>('/docs');
+    if (pendingWrites.size) return;
+    for (const [k, v] of Object.entries(docs)) {
+      if (v === null || JSON.stringify(docCache.get(k)) === JSON.stringify(v)) continue;
+      docCache.set(k, v);
+      window.dispatchEvent(new CustomEvent(EVENT, { detail: k }));
+    }
+  } catch {
+    /* offline oder abgemeldet – ignorieren */
+  }
 }
 
 /** Offene Änderungen sofort senden (z. B. beim Verlassen der Seite). */
@@ -170,7 +214,8 @@ export function flushDocs(keepalive = false) {
 
 if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', () => flushDocs(true));
-  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flushDocs(true));
+  document.addEventListener('visibilitychange', () => (document.visibilityState === 'hidden' ? flushDocs(true) : refreshDocs()));
+  window.addEventListener('online', retryFailedDocs);
 }
 
 function defineServerStore<T>({ key, schema, fallback, migrate, seed }: StoreOptions<T>): Store<T> {

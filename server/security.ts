@@ -53,7 +53,7 @@ export const h =
 
 /* ---------- Ratenbegrenzung (im Speicher, pro IP) ---------- */
 
-export function rateLimit(name: string, max: number, windowMs: number, message = 'Zu viele Versuche. Bitte warte ein paar Minuten.') {
+export function rateLimit(name: string, max: number, windowMs: number, message = 'Zu viele Versuche. Bitte warte ein paar Minuten.', onlyFailures = false) {
   const hits = new Map<string, { count: number; reset: number }>();
   setInterval(() => {
     const t = Date.now();
@@ -62,6 +62,11 @@ export function rateLimit(name: string, max: number, windowMs: number, message =
   return (req: Request, res: Response, next: NextFunction) => {
     const key = `${name}:${req.ip}`;
     const t = Date.now();
+    // Erfolgreiche Anfragen zählen nicht mit (z. B. normale Logins mehrerer Personen hinter einer IP)
+    if (onlyFailures) res.on('finish', () => {
+      const e = hits.get(key);
+      if (e && res.statusCode < 400 && e.count > 0) e.count -= 1;
+    });
     const entry = hits.get(key);
     if (!entry || entry.reset < t) {
       hits.set(key, { count: 1, reset: t + windowMs });

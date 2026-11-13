@@ -138,7 +138,8 @@ export function createSession(res: Response, userId: string, remember: boolean) 
   run('UPDATE users SET last_login_at = ? WHERE id = ?', now(), userId);
   res.cookie(COOKIE, token, {
     httpOnly: true,
-    secure: config.secureCookies,
+    // „Secure“ nur über HTTPS – so funktioniert die Seite auch, solange das Zertifikat noch fehlt
+    secure: res.req.secure,
     sameSite: 'lax',
     path: '/',
     ...(remember ? { expires } : {}),

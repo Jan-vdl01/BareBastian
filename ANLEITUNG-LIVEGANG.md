@@ -64,6 +64,17 @@ Danach ist die Seite unter `https://deine-domain.de` erreichbar.
 
 > Das Admin-Passwort wird nach dem ersten Start automatisch aus der Konfiguration gelöscht. In der Datenbank liegt es nur verschlüsselt (scrypt-Hash).
 
+### Wenn etwas nicht klappt
+
+- **Das Skript bricht ab:** Es zeigt die Zeile und die Fehlermeldung an. Du kannst es nach der Korrektur einfach erneut starten; bereits erledigte Schritte werden übersprungen bzw. wiederholt, ohne etwas kaputt zu machen.
+- **„Zertifikat fehlgeschlagen“:** Die Domain zeigt noch nicht auf den Server. Die Website läuft trotzdem schon und ist vorerst unter `http://DEINE-VPS-IP` erreichbar. Sobald die A-Records gelten, den angezeigten `certbot`-Befehl ausführen.
+- **Seite nicht erreichbar:** Prüfe in hPanel, ob die VPS-Firewall die Ports 80 und 443 freigibt.
+- **Diagnose:** Dieser Befehl gibt den kompletten Zustand aus (ohne Passwörter). Die Ausgabe kannst du kopieren und weitergeben:
+
+  ```bash
+  bash /opt/barebastian/deploy/diagnose.sh
+  ```
+
 ## 4. Erste Schritte nach dem Livegang
 
 1. Unter `https://deine-domain.de/#/login` mit der Admin-E-Mail anmelden.

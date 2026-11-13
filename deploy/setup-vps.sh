@@ -11,6 +11,7 @@
 #  Es kann gefahrlos erneut ausgeführt werden.
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
+trap 'echo; echo "✘ Abbruch in Zeile $LINENO. Bitte die Ausgabe oben kopieren und weitergeben."' ERR
 
 [ "$(id -u)" -eq 0 ] || { echo "Bitte mit sudo bzw. als root ausführen."; exit 1; }
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -52,12 +53,15 @@ if [ "$OS" = debian ]; then
   fi
 else
   EL=$(. /etc/os-release; echo "${VERSION_ID%%.*}")
-  dnf install -y -q dnf-plugins-core >/dev/null 2>&1 || true
+  # Einzelne nicht erreichbare Paketquellen dürfen die Installation nicht stoppen
+  DNF="dnf -y -q --setopt=skip_if_unavailable=1"
+  $DNF install dnf-plugins-core >/dev/null 2>&1 || true
   dnf config-manager --set-enabled crb >/dev/null 2>&1 || true
-  dnf install -y -q epel-release >/dev/null 2>&1 || dnf install -y -q "https://dl.fedoraproject.org/pub/epel/epel-release-latest-$EL.noarch.rpm" >/dev/null 2>&1 || true
-  dnf install -y -q curl unzip tar nginx sqlite cronie firewalld python3 >/dev/null
+  $DNF install epel-release >/dev/null 2>&1 || $DNF install "https://dl.fedoraproject.org/pub/epel/epel-release-latest-$EL.noarch.rpm" >/dev/null 2>&1 || true
+  $DNF install unzip tar nginx sqlite cronie firewalld python3 >/dev/null
+  command -v curl >/dev/null || $DNF install curl >/dev/null
   # certbot aus EPEL – falls nicht verfügbar, offizielle Installation per pip
-  if ! dnf install -y -q certbot python3-certbot-nginx >/dev/null 2>&1; then
+  if ! $DNF install certbot python3-certbot-nginx >/dev/null 2>&1; then
     echo "   certbot nicht in den Paketquellen – installiere per pip …"
     python3 -m venv /opt/certbot
     /opt/certbot/bin/pip install -q --upgrade pip
@@ -65,11 +69,11 @@ else
     ln -sf /opt/certbot/bin/certbot /usr/bin/certbot
     echo "0 4 * * * root /usr/bin/certbot renew -q --post-hook 'systemctl reload nginx'" > /etc/cron.d/certbot-renew
   fi
-  dnf install -y -q nodejs >/dev/null 2>&1 || true
+  $DNF install nodejs >/dev/null 2>&1 || true
   if ! node_ok; then
-    dnf remove -y -q nodejs >/dev/null 2>&1 || true
+    $DNF remove nodejs >/dev/null 2>&1 || true
     curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - >/dev/null
-    dnf install -y -q nodejs >/dev/null
+    $DNF install nodejs >/dev/null
   fi
   systemctl enable --now crond >/dev/null
 fi
@@ -79,6 +83,7 @@ echo "   Node $(node -v)"
 echo "→ Benutzer und Ordner …"
 id barebastian >/dev/null 2>&1 || useradd --system --home "$BASE" --shell /usr/sbin/nologin barebastian
 mkdir -p "$BASE/data" "$BASE/backups" "$BASE/deploy"
+chmod 755 "$BASE" "$BASE/deploy" && chmod 700 "$BASE/backups"
 rm -rf "$BASE/app" && cp -r "$SRC/app" "$BASE/app"
 cp -r "$SRC/deploy/." "$BASE/deploy/"
 chown -R root:barebastian "$BASE/app" && chmod -R o-rwx "$BASE/app"
@@ -103,6 +108,10 @@ if [ ! -f "$BASE/.env" ]; then
 fi
 chown root:barebastian "$BASE/.env" && chmod 640 "$BASE/.env"
 
+if ss -ltn 2>/dev/null | grep -q ':3000 ' && ! systemctl is-active -q barebastian; then
+  echo "✘ Port 3000 wird schon von einem anderen Programm benutzt:"; ss -ltnp | grep ':3000 ' || true
+  echo "  Bitte dieses Programm beenden oder melden, dann das Skript erneut starten."; exit 1
+fi
 echo "→ Dienst starten …"
 cp "$BASE/deploy/barebastian.service" /etc/systemd/system/barebastian.service
 systemctl daemon-reload
@@ -121,12 +130,22 @@ if [ -d /etc/nginx/sites-available ]; then
 else
   sed "s/DOMAIN/$DOMAIN/g" "$BASE/deploy/nginx-barebastian.conf" > /etc/nginx/conf.d/barebastian.conf
 fi
+# Server ohne IPv6: IPv6-Einträge entfernen (sonst startet nginx nicht)
+if [ ! -f /proc/net/if_inet6 ]; then
+  sed -i '/listen[[:space:]]*\[::\]/d' /etc/nginx/nginx.conf /etc/nginx/conf.d/*.conf /etc/nginx/sites-available/* 2>/dev/null || true
+fi
 # SELinux (AlmaLinux): nginx darf an den Node-Server weiterleiten
 if command -v getenforce >/dev/null && [ "$(getenforce)" != "Disabled" ]; then
   setsebool -P httpd_can_network_connect 1
 fi
+command -v restorecon >/dev/null && restorecon -R /etc/nginx "$BASE" >/dev/null 2>&1 || true
 nginx -t
-systemctl enable --now nginx >/dev/null
+systemctl enable nginx >/dev/null
+systemctl is-active -q nginx || systemctl start nginx || {
+  echo "✘ nginx startet nicht. Läuft schon ein anderer Webserver (Apache, LiteSpeed, Control-Panel) auf Port 80?"
+  ss -ltnp 2>/dev/null | grep -E ':(80|443) ' || true
+  exit 1
+}
 systemctl reload nginx
 
 echo "→ Firewall …"
@@ -146,16 +165,25 @@ if certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" --non-interactive --agree-tos -
   # automatische Verlängerung (unter Ubuntu bereits aktiv)
   systemctl enable --now certbot-renew.timer >/dev/null 2>&1 || true
 else
+  CERT_FAILED=1
   echo "⚠ Zertifikat fehlgeschlagen. Zeigt die Domain (A-Record für $DOMAIN und www) schon auf diese Server-IP?"
-  echo "  Später erneut: certbot --nginx -d $DOMAIN -d www.$DOMAIN --redirect"
+  echo "  Die Website läuft trotzdem schon (ohne Verschlüsselung). Sobald die Domain auf den Server zeigt:"
+  echo "  certbot --nginx -d $DOMAIN -d www.$DOMAIN --redirect"
 fi
 
 echo "→ Tägliche Sicherung (03:30 Uhr) …"
 chmod +x "$BASE/deploy/"*.sh
 echo "30 3 * * * root bash $BASE/deploy/backup.sh >> /var/log/barebastian-backup.log 2>&1" > /etc/cron.d/barebastian-backup
 
+IP=$( (ip -4 route get 1.1.1.1 2>/dev/null || true) | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)
+[ -n "$IP" ] || IP=$( (hostname -I 2>/dev/null || true) | awk '{print $1}')
 echo
-echo "✔ Fertig! Deine Website: https://$DOMAIN"
+if [ -n "${CERT_FAILED:-}" ]; then
+  echo "✔ Installiert – aber noch OHNE HTTPS. Vorerst erreichbar unter: http://${IP:-DEINE-SERVER-IP}"
+else
+  echo "✔ Fertig! Deine Website: https://$DOMAIN"
+fi
+echo "  Probleme? Diagnose ausgeben:  bash $BASE/deploy/diagnose.sh"
 echo "  Admin-Login: https://$DOMAIN/#/login"
 echo "  Status:      systemctl status barebastian"
 echo "  Logs:        journalctl -u barebastian -f"

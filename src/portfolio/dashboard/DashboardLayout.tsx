@@ -4,6 +4,7 @@ import { PROFILE } from '../data';
 import { ArrowLeft, ChartIcon, ChatIcon, UsersIcon, XIcon, CrownIcon, HomeIcon, LibraryIcon, LogoutIcon, Shield, UserIcon, WandIcon, type IconComponent } from '../icons';
 import { navigate } from '../router';
 import { AdminBadge } from './admin/AdminUI';
+import { onDocSave, retryFailedDocs } from '../lib/store';
 import { useUnreadCount } from './chat/chatStore';
 import { ProfileAvatar, ProfileName } from './profile/ProfileAvatar';
 
@@ -147,6 +148,7 @@ export function DashboardLayout({ path, title, subtitle, actions, children }: Da
           </div>
         </header>
 
+        <SaveErrorBanner />
         <main className="mx-auto max-w-6xl px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-12">{children}</main>
       </div>
 
@@ -216,6 +218,21 @@ export function DashboardLayout({ path, title, subtitle, actions, children }: Da
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Warnt, wenn persönliche Daten (Finanzen, Bio-Designer) nicht auf dem Server gespeichert werden konnten. */
+function SaveErrorBanner() {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => onDocSave((state) => state !== 'saving' && setFailed(state === 'error')), []);
+  if (!failed) return null;
+  return (
+    <div role="alert" className="mx-auto mt-4 flex max-w-6xl flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-400/40 bg-rose-500/15 px-4 py-3 text-sm text-rose-100 sm:mx-6 lg:mx-8">
+      <span>Deine letzten Änderungen konnten nicht gespeichert werden. Prüfe deine Internetverbindung.</span>
+      <button type="button" onClick={retryFailedDocs} className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white">
+        Erneut speichern
+      </button>
     </div>
   );
 }

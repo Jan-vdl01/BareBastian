@@ -26,8 +26,6 @@ export const config = {
   adminEmail: env('ADMIN_EMAIL').toLowerCase(),
   adminPassword: env('ADMIN_PASSWORD'),
 
-  /** Cookies nur über HTTPS senden (in Produktion immer an lassen) */
-  secureCookies: env('SECURE_COOKIES', isProduction ? 'true' : 'false') === 'true',
   sessionDays: num('SESSION_DAYS', 30),
 
   smtp: {

@@ -336,7 +336,7 @@ communityRouter.delete('/chat/:other', requireAccess, (req, res) => {
 /* ================= Persönliche Dokumente (Finanzen, Bio-Designer) ================= */
 
 const DOC_KEY_RE = /^bb_(finance|bio_library)_[\w-]+$/;
-const MAX_DOC_BYTES = 3 * 1024 * 1024;
+const MAX_DOC_BYTES = 6 * 1024 * 1024;
 
 communityRouter.get('/docs', requireLogin, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -348,7 +348,7 @@ communityRouter.put('/docs/:key', requireAccess, h((req, res) => {
   const key = String(req.params.key);
   if (!DOC_KEY_RE.test(key) || !key.endsWith(`_${req.user!.id}`)) throw badRequest('Ungültiger Speicherbereich.');
   const value = JSON.stringify(req.body?.value ?? null);
-  if (value.length > MAX_DOC_BYTES) throw badRequest('Die Daten sind zu groß (max. 3 MB).');
+  if (value.length > MAX_DOC_BYTES) throw badRequest('Die Daten sind zu groß (max. 6 MB). Bitte ältere Versionen oder Profile löschen.');
   run('INSERT INTO user_docs (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at', req.user!.id, key, value, now());
   res.json({ ok: true });
 }));

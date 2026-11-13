@@ -72,7 +72,7 @@ export function createApp() {
           scriptSrc: ["'self'"],
           styleSrc: ["'self'", "'unsafe-inline'"],
           imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-          mediaSrc: ["'self'", 'blob:'],
+          mediaSrc: ["'self'", 'blob:', 'https:'],
           fontSrc: ["'self'", 'data:'],
           connectSrc: ["'self'"],
           frameSrc: ["'self'"],
@@ -80,12 +80,13 @@ export function createApp() {
           objectSrc: ["'none'"],
           baseUri: ["'self'"],
           formAction: ["'self'"],
-          ...(isProduction ? { upgradeInsecureRequests: [] } : {}),
         },
       },
       hsts: isProduction ? { maxAge: 31536000 } : false,
       referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
       crossOriginResourcePolicy: { policy: 'same-origin' },
+      crossOriginOpenerPolicy: false,
+      originAgentCluster: false,
     }),
   );
 
@@ -131,14 +132,24 @@ export function createApp() {
 }
 
 async function main() {
+  process.on('unhandledRejection', (err) => console.error('[Fehler] Unbehandelt:', err));
   if (await cli(process.argv.slice(2))) return;
   await ensureAdmin();
   run('DELETE FROM sessions WHERE expires_at < ?', new Date().toISOString());
   const app = createApp();
-  app.listen(config.port, config.host, () => {
+  const server = app.listen(config.port, config.host, () => {
     console.log(`✔ ${config.siteName} läuft auf http://${config.host}:${config.port} (öffentlich: ${config.baseUrl})`);
     console.log(`  Daten: ${config.dataDir} · E-Mail-Versand: ${mailEnabled() ? 'aktiv' : 'nicht eingerichtet (Mails werden nur geloggt)'}`);
   });
+  // Große Video-Uploads über langsame Leitungen dürfen bis zu 6 Stunden dauern (Standard wären 5 Minuten)
+  server.requestTimeout = 6 * 60 * 60 * 1000;
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    console.error(err.code === 'EADDRINUSE' ? `✘ Port ${config.port} ist bereits belegt. Bitte in der .env einen anderen PORT setzen (und in der nginx-Konfiguration anpassen).` : err);
+    process.exit(1);
+  });
+  const stop = () => server.close(() => process.exit(0));
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
 }
 
 main().catch((err) => {
