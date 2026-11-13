@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-#  BAREBASTIAN – Ersteinrichtung auf einem Hostinger-VPS (Ubuntu 22.04 / 24.04)
+#  BAREBASTIAN – Ersteinrichtung auf einem Hostinger-VPS
+#  Unterstützt: Ubuntu 22.04/24.04, Debian 12 und AlmaLinux / Rocky Linux 9/10
 #
 #  Aufruf (im entpackten Release-Ordner, als root):
 #     sudo bash deploy/setup-vps.sh
@@ -15,8 +16,11 @@ set -euo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$SRC/app/server.cjs" ] || { echo "app/server.cjs fehlt – bitte im entpackten Release-Ordner ausführen."; exit 1; }
 BASE=/opt/barebastian
+if command -v apt-get >/dev/null; then OS=debian
+elif command -v dnf >/dev/null; then OS=rhel
+else echo "Nicht unterstütztes Betriebssystem (benötigt apt-get oder dnf)."; exit 1; fi
 
-echo "== BAREBASTIAN Einrichtung =="
+echo "== BAREBASTIAN Einrichtung ($( . /etc/os-release; echo "$PRETTY_NAME")) =="
 read -rp "Domain (ohne www, z. B. bare-bastian.de): " DOMAIN
 read -rp "E-Mail für SSL-Zertifikat-Hinweise (Let's Encrypt): " CERT_MAIL
 if [ ! -f "$BASE/.env" ]; then
@@ -36,14 +40,40 @@ if [ ! -f "$BASE/.env" ]; then
   read -rp "E-Mail für Benachrichtigungen (Kontakt, Abo-Anfragen): " NOTIFY_EMAIL
 fi
 
-echo "→ Pakete installieren …"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq curl ca-certificates gnupg unzip nginx certbot python3-certbot-nginx ufw sqlite3 >/dev/null
-if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 22 ]; then
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
-  apt-get install -y -qq nodejs >/dev/null
+echo "→ Pakete installieren (kann ein paar Minuten dauern) …"
+node_ok() { command -v node >/dev/null && [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 22 ]; }
+if [ "$OS" = debian ]; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq curl ca-certificates gnupg unzip nginx certbot python3-certbot-nginx ufw sqlite3 cron >/dev/null
+  if ! node_ok; then
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
+    apt-get install -y -qq nodejs >/dev/null
+  fi
+else
+  EL=$(. /etc/os-release; echo "${VERSION_ID%%.*}")
+  dnf install -y -q dnf-plugins-core >/dev/null 2>&1 || true
+  dnf config-manager --set-enabled crb >/dev/null 2>&1 || true
+  dnf install -y -q epel-release >/dev/null 2>&1 || dnf install -y -q "https://dl.fedoraproject.org/pub/epel/epel-release-latest-$EL.noarch.rpm" >/dev/null 2>&1 || true
+  dnf install -y -q curl unzip tar nginx sqlite cronie firewalld python3 >/dev/null
+  # certbot aus EPEL – falls nicht verfügbar, offizielle Installation per pip
+  if ! dnf install -y -q certbot python3-certbot-nginx >/dev/null 2>&1; then
+    echo "   certbot nicht in den Paketquellen – installiere per pip …"
+    python3 -m venv /opt/certbot
+    /opt/certbot/bin/pip install -q --upgrade pip
+    /opt/certbot/bin/pip install -q certbot certbot-nginx
+    ln -sf /opt/certbot/bin/certbot /usr/bin/certbot
+    echo "0 4 * * * root /usr/bin/certbot renew -q --post-hook 'systemctl reload nginx'" > /etc/cron.d/certbot-renew
+  fi
+  dnf install -y -q nodejs >/dev/null 2>&1 || true
+  if ! node_ok; then
+    dnf remove -y -q nodejs >/dev/null 2>&1 || true
+    curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - >/dev/null
+    dnf install -y -q nodejs >/dev/null
+  fi
+  systemctl enable --now crond >/dev/null
 fi
+node_ok || { echo "✘ Node.js 22 konnte nicht installiert werden."; exit 1; }
 echo "   Node $(node -v)"
 
 echo "→ Benutzer und Ordner …"
@@ -84,20 +114,37 @@ curl -fs http://127.0.0.1:3000/api/health >/dev/null || { journalctl -u barebast
 sed -i 's|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=|' "$BASE/.env"
 
 echo "→ nginx …"
-sed "s/DOMAIN/$DOMAIN/g" "$BASE/deploy/nginx-barebastian.conf" > /etc/nginx/sites-available/barebastian
-ln -sf /etc/nginx/sites-available/barebastian /etc/nginx/sites-enabled/barebastian
-rm -f /etc/nginx/sites-enabled/default
-sed -i 's/# server_tokens off;/server_tokens off;/' /etc/nginx/nginx.conf || true
-nginx -t && systemctl reload nginx
+if [ -d /etc/nginx/sites-available ]; then
+  sed "s/DOMAIN/$DOMAIN/g" "$BASE/deploy/nginx-barebastian.conf" > /etc/nginx/sites-available/barebastian
+  ln -sf /etc/nginx/sites-available/barebastian /etc/nginx/sites-enabled/barebastian
+  rm -f /etc/nginx/sites-enabled/default
+else
+  sed "s/DOMAIN/$DOMAIN/g" "$BASE/deploy/nginx-barebastian.conf" > /etc/nginx/conf.d/barebastian.conf
+fi
+# SELinux (AlmaLinux): nginx darf an den Node-Server weiterleiten
+if command -v getenforce >/dev/null && [ "$(getenforce)" != "Disabled" ]; then
+  setsebool -P httpd_can_network_connect 1
+fi
+nginx -t
+systemctl enable --now nginx >/dev/null
+systemctl reload nginx
 
 echo "→ Firewall …"
-ufw allow OpenSSH >/dev/null
-ufw allow 'Nginx Full' >/dev/null
-ufw --force enable >/dev/null
+if [ "$OS" = debian ]; then
+  ufw allow OpenSSH >/dev/null
+  ufw allow 'Nginx Full' >/dev/null
+  ufw --force enable >/dev/null
+else
+  systemctl enable --now firewalld >/dev/null
+  firewall-cmd -q --permanent --add-service=ssh --add-service=http --add-service=https
+  firewall-cmd -q --reload
+fi
 
 echo "→ HTTPS-Zertifikat …"
 if certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" --non-interactive --agree-tos -m "$CERT_MAIL" --redirect; then
   echo "   HTTPS aktiv."
+  # automatische Verlängerung (unter Ubuntu bereits aktiv)
+  systemctl enable --now certbot-renew.timer >/dev/null 2>&1 || true
 else
   echo "⚠ Zertifikat fehlgeschlagen. Zeigt die Domain (A-Record für $DOMAIN und www) schon auf diese Server-IP?"
   echo "  Später erneut: certbot --nginx -d $DOMAIN -d www.$DOMAIN --redirect"

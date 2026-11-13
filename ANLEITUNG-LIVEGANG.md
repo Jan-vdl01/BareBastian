@@ -11,7 +11,7 @@ Alle Daten liegen in einer SQLite-Datenbank und einem Upload-Ordner unter `/opt/
 
 ## 1. Vorbereitung in Hostinger (hPanel)
 
-1. **VPS** mit **Ubuntu 24.04** (oder 22.04) als Betriebssystem. Das Root-Passwort bzw. den SSH-Zugang findest du unter *VPS → Übersicht*.
+1. **VPS** mit **Ubuntu 24.04/22.04** oder **AlmaLinux 9/10** als Betriebssystem – das Skript erkennt das System automatisch. Das Root-Passwort bzw. den SSH-Zugang findest du unter *VPS → Übersicht*.
 2. **Domain auf den VPS zeigen lassen:** Unter *Domains → DNS / Nameserver* zwei **A-Records** anlegen:
    - `@` → IP-Adresse des VPS
    - `www` → IP-Adresse des VPS
@@ -36,10 +36,13 @@ Per SSH verbinden. Das geht mit `ssh root@DEINE-VPS-IP` oder über das Browser-T
 
 ```bash
 cd /root
-apt-get install -y unzip
+apt-get install -y unzip        # Ubuntu
+# dnf install -y unzip          # AlmaLinux (statt der Zeile darüber)
 unzip barebastian-release.zip
 sudo bash barebastian/deploy/setup-vps.sh
 ```
+
+Unter **AlmaLinux** richtet das Skript zusätzlich EPEL, die Firewall `firewalld` und die nötige SELinux-Freigabe für nginx ein.
 
 Das Skript fragt nach:
 
