@@ -93,6 +93,12 @@ export function createApp() {
   /* API */
   const api = express.Router();
   api.use(rateLimit('api', 600, 60 * 1000, 'Zu viele Anfragen. Bitte kurz warten.'));
+  // Die Oberfläche sendet PUT/DELETE als POST mit X-BB-Method (siehe lib/api.ts)
+  api.use((req, _res, next) => {
+    const m = req.get('x-bb-method');
+    if (req.method === 'POST' && (m === 'PUT' || m === 'DELETE')) req.method = m;
+    next();
+  });
   api.use(requireAppHeader);
   api.use(loadUser);
   api.use('/files', filesRouter); // roher Upload – vor dem JSON-Parser

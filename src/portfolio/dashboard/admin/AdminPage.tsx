@@ -285,6 +285,8 @@ export function AdminPage() {
         </ul>
       </section>
 
+      <SettingsCard onNotice={setNotice} />
+
       {/* ---------- Bibliothek & Sicherung ---------- */}
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-6">
@@ -380,3 +382,79 @@ function GrantDialog({ member, onClose, onDone }: { member: AdminUser; onClose: 
   );
 }
 
+
+interface SiteSettings {
+  mailFrom: string;
+  notifyEmail: string;
+  paymentInfo: string;
+  paymentLinks: Partial<Record<PlanId, string>>;
+}
+
+/** Zahlungstext, Bezahl-Links und E-Mail-Adressen (nur in der Webhosting-Version direkt hier änderbar). */
+function SettingsCard({ onNotice }: { onNotice: (n: { ok: boolean; text: string }) => void }) {
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<SiteSettings>('/admin/settings')
+      .then(setSettings)
+      .catch(() => setSettings(null)); // VPS-Version: Einstellungen stehen in der .env-Datei
+  }, []);
+  if (!settings) return null;
+  const set = <K extends keyof SiteSettings>(k: K, v: SiteSettings[K]) => setSettings((s) => (s ? { ...s, [k]: v } : s));
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api.put('/admin/settings', settings);
+      onNotice({ ok: true, text: 'Einstellungen gespeichert.' });
+    } catch (err) {
+      onNotice({ ok: false, text: errorText(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const testMail = async () => {
+    try {
+      const r = await api.post<{ to: string }>('/admin/settings/test-mail');
+      onNotice({ ok: true, text: `Test-E-Mail an ${r.to} gesendet. Schau auch im Spam-Ordner nach.` });
+    } catch (err) {
+      onNotice({ ok: false, text: errorText(err) });
+    }
+  };
+
+  return (
+    <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-4 sm:p-6">
+      <h3 className="font-oswald text-xl tracking-wide text-white">Einstellungen</h3>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <label className="block text-xs font-medium text-slate-300 lg:col-span-2">
+          Zahlungstext (sehen Mitglieder nach einer Abo-Anfrage, auch per E-Mail)
+          <textarea rows={3} value={settings.paymentInfo} onChange={(e) => set('paymentInfo', e.target.value)} className={`${adminInput} mt-1.5 resize-y`} />
+        </label>
+        {PLANS.map((p) => (
+          <label key={p.id} className="block text-xs font-medium text-slate-300">
+            Bezahl-Link „{p.name}“ (optional)
+            <input type="url" placeholder="https://…" value={settings.paymentLinks[p.id] ?? ''} onChange={(e) => set('paymentLinks', { ...settings.paymentLinks, [p.id]: e.target.value })} className={`${adminInput} mt-1.5`} />
+          </label>
+        ))}
+        <label className="block text-xs font-medium text-slate-300">
+          Absender-Adresse für E-Mails
+          <input type="email" value={settings.mailFrom} onChange={(e) => set('mailFrom', e.target.value)} className={`${adminInput} mt-1.5`} />
+        </label>
+        <label className="block text-xs font-medium text-slate-300">
+          Benachrichtigungen an
+          <input type="email" value={settings.notifyEmail} onChange={(e) => set('notifyEmail', e.target.value)} className={`${adminInput} mt-1.5`} />
+        </label>
+      </div>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <button type="button" disabled={busy} onClick={save} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-300 to-orange-500 px-5 py-2.5 text-sm font-semibold text-slate-900 disabled:opacity-60">
+          <CheckIcon size={16} /> {busy ? 'Wird gespeichert …' : 'Speichern'}
+        </button>
+        <button type="button" onClick={testMail} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm text-white hover:bg-white/10">
+          <MailIcon size={16} /> Test-E-Mail senden
+        </button>
+      </div>
+    </section>
+  );
+}

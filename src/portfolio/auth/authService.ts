@@ -56,7 +56,12 @@ type UserResponse = { user: User | null };
 const userOf = (r: UserResponse) => r.user;
 
 export const authApi = {
-  me: () => api.get<UserResponse>('/auth/me').then(userOf),
+  me: () =>
+    api.get<UserResponse & { setup?: boolean }>('/auth/me').then((r) => {
+      // Frische Installation (PHP-Version): zuerst die Einrichtung öffnen
+      if (r.setup) window.location.replace('/einrichtung.php');
+      return r.user;
+    }),
   config: () => api.get<PublicConfig>('/config'),
   login: (email: string, password: string, remember: boolean) => api.post<UserResponse>('/auth/login', { email, password, remember }).then(userOf),
   register: (input: RegisterInput) => api.post<UserResponse>('/auth/register', input).then(userOf),

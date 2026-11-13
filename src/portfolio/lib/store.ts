@@ -155,11 +155,11 @@ function pushDoc(key: string, keepalive = false, attempt = 0): Promise<void> {
   const body = JSON.stringify({ value: docCache.get(key) ?? null });
   const sentValue = docCache.get(key);
   return fetch(`/api/docs/${encodeURIComponent(key)}`, {
-    method: 'PUT',
+    method: 'POST',
     // keepalive erlaubt nur kleine Anfragen (64 KB) – größere normal senden
     keepalive: keepalive && body.length < 60000,
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', 'X-BB': '1' },
+    headers: { 'Content-Type': 'application/json', 'X-BB': '1', 'X-BB-Method': 'PUT' },
     body,
   })
     .then((r) => {

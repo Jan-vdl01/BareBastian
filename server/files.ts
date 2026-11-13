@@ -115,6 +115,45 @@ filesRouter.post(
   }),
 );
 
+/** Upload in Teilstücken (für große Dateien): ?scope=&id=&offset=&last=&type= */
+filesRouter.post(
+  '/chunk',
+  requireLogin,
+  h(async (req: Request, res) => {
+    const scope = String(req.query.scope ?? '') as FileScope;
+    if (scope !== 'library' || req.user!.role !== 'admin') throw forbidden('Große Uploads sind nur für die Bibliothek möglich.');
+    const mime = String(req.query.type ?? '').toLowerCase();
+    if (!ALLOWED[mime]) throw badRequest('Dateiformat wird nicht unterstützt (erlaubt: JPG, PNG, WebP, GIF, MP4, WebM, MOV).');
+    const uploadId = String(req.query.id ?? '');
+    if (!/^[a-z0-9]{8,40}$/.test(uploadId)) throw badRequest('Ungültiger Upload.');
+    const offset = Number(req.query.offset);
+    const limit = config.maxUploadMb.library * 1024 * 1024;
+    const tmp = path.join(uploadsDir, `tmp_${uploadId}`);
+    const current = fs.existsSync(tmp) ? fs.statSync(tmp).size : 0;
+    if (!Number.isInteger(offset) || offset < 0 || offset > current) throw new HttpError(409, 'Upload ist aus dem Takt geraten. Bitte erneut hochladen.');
+    if (offset < current) fs.truncateSync(tmp, offset); // wiederholtes Teilstück
+    let size = offset;
+    const counter = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        size += chunk.length;
+        if (size > limit) cb(new HttpError(413, `Die Datei ist zu groß (max. ${Math.round(limit / 1024 / 1024)} MB).`));
+        else cb(null, chunk);
+      },
+    });
+    try {
+      await pipeline(req, counter, fs.createWriteStream(tmp, { flags: 'a' }));
+    } catch (err) {
+      if (err instanceof HttpError) fs.rm(tmp, { force: true }, () => undefined);
+      throw err instanceof HttpError ? err : badRequest('Upload abgebrochen.');
+    }
+    if (req.query.last !== '1') return res.json({ ok: true, received: size });
+    const id = newId('f');
+    fs.renameSync(tmp, filePath(id));
+    run('INSERT INTO files (id, owner_id, scope, mime, size, created_at) VALUES (?, ?, ?, ?, ?, ?)', id, req.user!.id, scope, mime, size, now());
+    res.status(201).json({ url: fileUrl(id), size });
+  }),
+);
+
 filesRouter.get(
   '/:id',
   requireLogin,

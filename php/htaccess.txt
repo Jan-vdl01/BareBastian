@@ -1,0 +1,32 @@
+# BAREBASTIAN – Einstellungen für den Webserver (Hostinger Webhosting / LiteSpeed / Apache)
+Options -Indexes
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # Alle Adressen unter /api/… an die PHP-Schnittstelle leiten
+  RewriteCond %{REQUEST_URI} !/api/index\.php$
+  RewriteRule ^api(/.*)?$ api/index.php [QSA,L]
+  # Datenordner und interne Dateien nie ausliefern
+  RewriteRule ^bb-data(/|$) - [F,L]
+  RewriteRule ^api/(lib\.php|plans\.json)$ - [F,L]
+</IfModule>
+
+# Sicherheits-Header
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+  <FilesMatch "\.(js|css|woff2?|png|jpg|svg)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
+
+# Komprimierung
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json image/svg+xml
+</IfModule>
