@@ -13,7 +13,7 @@ adminRouter.use(requireAdmin);
 adminRouter.get('/users', (_req, res) => {
   const users = all<UserRow>('SELECT * FROM users ORDER BY created_at DESC');
   const subs = new Map(all<SubRow>('SELECT * FROM subscriptions').map((s) => [s.user_id, s]));
-  const reqs = new Map(all<{ user_id: string; plan: string; created_at: string; id: string }>("SELECT * FROM sub_requests WHERE status = 'open'").map((r) => [r.user_id, r]));
+  const reqs = new Map(all<{ user_id: string; plan: string; created_at: string; id: string; code: string | null; percent: number | null; price: number | null }>("SELECT * FROM sub_requests WHERE status = 'open'").map((r) => [r.user_id, r]));
   res.setHeader('Cache-Control', 'no-store');
   res.json(
     users.map((u) => {
@@ -32,7 +32,7 @@ adminRouter.get('/users', (_req, res) => {
         emailVerified: !!u.email_verified,
         disabled: !!u.disabled,
         subscription: s ? { plan: s.plan, status: s.status, startedAt: s.started_at, renewsAt: s.renews_at } : null,
-        request: r ? { id: r.id, plan: r.plan, createdAt: r.created_at } : null,
+        request: r ? { id: r.id, plan: r.plan, createdAt: r.created_at, code: r.code, percent: r.percent, price: r.price } : null,
       };
     }),
   );

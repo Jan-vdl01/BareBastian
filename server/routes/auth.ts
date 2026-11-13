@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getPlan, PLANS } from '../../src/portfolio/config/plans';
 import { config, mailEnabled } from '../config';
 import { all, now, one, parseJson, run } from '../db';
+import { discounted, grantAccess, redeem, validCode } from '../codes';
 import { deleteFilesOf } from '../files';
 import { notifyAdmin, sendMail } from '../mail';
 import { badRequest, EMAIL_RE, h, hashPassword, HttpError, parseCookies, rateLimit, verifyPassword } from '../security';
@@ -223,6 +224,8 @@ authRouter.get('/account/export', requireLogin, (req, res) => {
 
 const planSchema = z.object({ plan: z.enum(['monthly', 'quarterly', 'yearly']) });
 
+const euro = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
+
 authRouter.post(
   '/subscription/request',
   requireLogin,
@@ -230,16 +233,30 @@ authRouter.post(
     const parsed = planSchema.safeParse(req.body);
     if (!parsed.success) throw badRequest('Bitte wähle ein Paket.');
     const user = req.user!;
-    run("UPDATE sub_requests SET status = 'replaced' WHERE user_id = ? AND status = 'open'", user.id);
-    run('INSERT INTO sub_requests (id, user_id, plan, status, created_at) VALUES (?, ?, ?, ?, ?)', `r_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, user.id, parsed.data.plan, 'open', now());
     const plan = getPlan(parsed.data.plan);
+    const code = req.body?.code ? validCode(req.body.code, user.id) : null;
     const name = getProfile(user.id)?.displayName ?? user.email;
-    notifyAdmin('Neue Abo-Anfrage', [`${name} (${user.email}) möchte das Paket „${plan.name}“ (${plan.price.toFixed(2)} €).`, 'Nach Zahlungseingang in der Verwaltung unter „Mitglieder & Abos“ freischalten.'], user.email).catch(() => undefined);
+
+    // Code mit 100 %: Zugang sofort freischalten – keine Zahlung, keine Freigabe nötig
+    if (code && code.percent >= 100) {
+      const months = code.months ?? plan.months;
+      const end = grantAccess(user.id, plan.id, months);
+      redeem(code, user.id);
+      notifyAdmin('Code eingelöst', [`${name} (${user.email}) hat den Code „${code.code}“ eingelöst und hat bis ${new Date(end).toLocaleDateString('de-DE')} kostenlosen Zugang.`]).catch(() => undefined);
+      return res.json({ user: clientUser(user), granted: true });
+    }
+
+    const price = code ? discounted(plan.price, code.percent) : plan.price;
+    run("UPDATE sub_requests SET status = 'replaced' WHERE user_id = ? AND status = 'open'", user.id);
+    run('INSERT INTO sub_requests (id, user_id, plan, status, created_at, code, percent, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', `r_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, user.id, plan.id, 'open', now(), code?.code ?? null, code?.percent ?? null, price);
+    if (code) redeem(code, user.id);
+    const priceLine = code ? `${euro(price)} statt ${euro(plan.price)} (Code ${code.code}, −${code.percent} %)` : euro(price);
+    notifyAdmin('Neue Abo-Anfrage', [`${name} (${user.email}) möchte das Paket „${plan.name}“: ${priceLine}.`, 'Nach Zahlungseingang in der Verwaltung unter „Mitglieder & Abos“ freischalten.'], user.email).catch(() => undefined);
     sendMail({
       to: user.email,
       subject: `Deine Abo-Anfrage – ${config.siteName}`,
       title: 'Danke für deine Abo-Anfrage!',
-      lines: [`Paket: ${plan.name} – ${plan.price.toFixed(2).replace('.', ',')} €`, config.payment.info],
+      lines: [`Paket: ${plan.name} – ${priceLine}`, config.payment.info],
       button: config.payment.links[plan.id] ? { label: 'Jetzt bezahlen', url: config.payment.links[plan.id] } : undefined,
     }).catch(() => undefined);
     res.json({ user: clientUser(user) });

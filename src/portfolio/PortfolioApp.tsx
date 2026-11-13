@@ -4,10 +4,9 @@ import type { LegalModalType } from '../types';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { FaqAccordion } from './components/FaqAccordion';
 import { InfoDrawer } from './components/InfoDrawer';
-import { LearnlyHero } from './components/LearnlyHero';
+import { LandingPage } from './components/LandingPage';
 import { LoginPage, ResetPasswordPage, VerifyEmailPage } from './components/LoginPage';
 import { Navbar } from './components/Navbar';
-import { PricingTeaser } from './components/PricingTeaser';
 import { ParticleBackground } from './components/ParticleBackground';
 import { SplitFooter } from './components/SplitFooter';
 import { BioBuilderPage } from './dashboard/bio-builder/BioBuilderPage';
@@ -144,8 +143,7 @@ function Router() {
     <PublicShell>
       {(openContact) => (
         <main>
-          <LearnlyHero onOpenContact={openContact} />
-          <PricingTeaser />
+          <LandingPage onOpenContact={openContact} />
           <FaqAccordion />
         </main>
       )}

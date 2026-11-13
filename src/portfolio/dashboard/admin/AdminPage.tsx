@@ -20,7 +20,7 @@ interface AdminUser {
   emailVerified: boolean;
   disabled: boolean;
   subscription: { plan: PlanId; status: 'active' | 'canceled'; startedAt: string; renewsAt: string } | null;
-  request: { id: string; plan: PlanId; createdAt: string } | null;
+  request: { id: string; plan: PlanId; createdAt: string; code?: string | null; percent?: number | null; price?: number | null } | null;
 }
 
 interface ContactMessage {
@@ -211,7 +211,8 @@ export function AdminPage() {
                 <span className="flex flex-wrap items-center gap-2 text-xs">
                   {u.request && (
                     <span className="rounded-full bg-rose-400/15 px-2.5 py-1 font-semibold text-rose-200">
-                      Anfrage: {getPlan(u.request.plan).name} · {formatDate(u.request.createdAt)}
+                      Anfrage: {getPlan(u.request.plan).name} · {formatEuro(u.request.price ?? getPlan(u.request.plan).price)}
+                      {u.request.code ? ` · Code ${u.request.code} (−${u.request.percent} %)` : ''} · {formatDate(u.request.createdAt)}
                     </span>
                   )}
                   {active ? (
@@ -284,6 +285,8 @@ export function AdminPage() {
           {contact.length === 0 && <li className="text-sm text-slate-500">Noch keine Nachrichten über das Kontaktformular.</li>}
         </ul>
       </section>
+
+      <CodesCard onNotice={setNotice} />
 
       <SettingsCard onNotice={setNotice} />
 
@@ -455,6 +458,164 @@ function SettingsCard({ onNotice }: { onNotice: (n: { ok: boolean; text: string 
           <MailIcon size={16} /> Test-E-Mail senden
         </button>
       </div>
+    </section>
+  );
+}
+
+interface DiscountCode {
+  id: string;
+  code: string;
+  percent: number;
+  months: number | null;
+  maxUses: number | null;
+  used: number;
+  expiresAt: string | null;
+  active: boolean;
+  note: string;
+  createdAt: string;
+}
+
+const randomCode = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('');
+
+/** Rabattcodes: Prozent-Rabatt auf ein Abo oder kostenloser Zugang (100 %), z. B. für Testkonten. */
+function CodesCard({ onNotice }: { onNotice: (n: { ok: boolean; text: string }) => void }) {
+  const [codes, setCodes] = useState<DiscountCode[]>([]);
+  const [kind, setKind] = useState<'percent' | 'free'>('percent');
+  const [form, setForm] = useState({ code: '', percent: 20, months: 1, maxUses: '', expiresAt: '', note: '' });
+  const [busy, setBusy] = useState(false);
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
+
+  const load = useCallback(() => api.get<DiscountCode[]>('/admin/codes').then(setCodes).catch(() => undefined), []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const create = async () => {
+    setBusy(true);
+    try {
+      const c = await api.post<DiscountCode>('/admin/codes', {
+        code: form.code,
+        percent: kind === 'free' ? 100 : form.percent,
+        months: kind === 'free' ? form.months : null,
+        maxUses: form.maxUses === '' ? null : Number(form.maxUses),
+        expiresAt: form.expiresAt ? new Date(`${form.expiresAt}T23:59:59`).toISOString() : null,
+        note: form.note,
+      });
+      onNotice({ ok: true, text: `Code ${c.code} wurde erstellt.` });
+      // Felder leeren, damit Begrenzungen nicht versehentlich für den nächsten Code gelten
+      setForm((f) => ({ ...f, code: '', note: '', maxUses: '', expiresAt: '' }));
+      await load();
+    } catch (err) {
+      onNotice({ ok: false, text: errorText(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const act = async (fn: () => Promise<unknown>, text: string) => {
+    try {
+      await fn();
+      onNotice({ ok: true, text });
+      await load();
+    } catch (err) {
+      onNotice({ ok: false, text: errorText(err) });
+    }
+  };
+  const status = (c: DiscountCode) => {
+    if (!c.active) return { text: 'Pausiert', cls: 'bg-white/5 text-slate-400' };
+    if (c.expiresAt && new Date(c.expiresAt) < new Date()) return { text: 'Abgelaufen', cls: 'bg-rose-500/15 text-rose-200' };
+    if (c.maxUses !== null && c.used >= c.maxUses) return { text: 'Aufgebraucht', cls: 'bg-amber-400/15 text-amber-200' };
+    return { text: 'Aktiv', cls: 'bg-emerald-400/15 text-emerald-300' };
+  };
+  const label = 'block text-xs font-medium text-slate-300';
+
+  return (
+    <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-4 sm:p-6">
+      <h3 className="font-oswald text-xl tracking-wide text-white">Rabatt- & Zugangscodes</h3>
+      <p className="mt-1 text-xs text-slate-500">Mitglieder geben den Code bei der Registrierung oder bei der Abo-Auswahl ein. Ein Zugangscode schaltet das Abo sofort kostenlos frei – praktisch für Testkonten oder Geschenke.</p>
+
+      <div className="mt-4 inline-flex rounded-xl border border-white/10 bg-white/[0.03] p-1 text-xs" role="tablist" aria-label="Art des Codes">
+        {([
+          ['percent', 'Rabatt in %'],
+          ['free', 'Kostenloser Zugang'],
+        ] as const).map(([k, text]) => (
+          <button key={k} type="button" role="tab" aria-selected={kind === k} onClick={() => setKind(k)} className={`rounded-lg px-3 py-1.5 transition-colors ${kind === k ? 'bg-white/10 font-semibold text-white' : 'text-slate-400'}`}>
+            {text}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <label className={`${label} lg:col-span-2`}>
+          Code
+          <span className="mt-1.5 flex gap-2">
+            <input value={form.code} onChange={(e) => set('code', e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))} placeholder="z. B. SOMMER20" maxLength={30} className={`${adminInput} uppercase tracking-wider`} />
+            <button type="button" onClick={() => set('code', randomCode())} className="shrink-0 rounded-xl border border-white/10 px-3 text-xs text-slate-300 hover:bg-white/5">
+              Zufällig
+            </button>
+          </span>
+        </label>
+        {kind === 'percent' ? (
+          <label className={label}>
+            Rabatt in %
+            <input type="number" min={1} max={99} value={form.percent} onChange={(e) => set('percent', Math.max(1, Math.min(99, Number(e.target.value) || 1)))} className={`${adminInput} mt-1.5`} />
+          </label>
+        ) : (
+          <label className={label}>
+            Zugang für Monate
+            <input type="number" min={1} max={120} value={form.months} onChange={(e) => set('months', Math.max(1, Math.min(120, Number(e.target.value) || 1)))} className={`${adminInput} mt-1.5`} />
+          </label>
+        )}
+        <label className={label}>
+          Max. Einlösungen
+          <input type="number" min={1} value={form.maxUses} onChange={(e) => set('maxUses', e.target.value)} placeholder="unbegrenzt" className={`${adminInput} mt-1.5`} />
+        </label>
+        <label className={label}>
+          Gültig bis
+          <input type="date" value={form.expiresAt} onChange={(e) => set('expiresAt', e.target.value)} className={`${adminInput} mt-1.5`} />
+        </label>
+        <label className={label}>
+          Notiz (nur für dich)
+          <input value={form.note} onChange={(e) => set('note', e.target.value)} maxLength={200} placeholder="z. B. Testkonto" className={`${adminInput} mt-1.5`} />
+        </label>
+      </div>
+      <button type="button" disabled={busy || form.code.length < 3} onClick={create} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-300 to-orange-500 px-5 py-2.5 text-sm font-semibold text-slate-900 disabled:opacity-50">
+        <CheckIcon size={16} /> {busy ? 'Wird erstellt …' : 'Code erstellen'}
+      </button>
+
+      <ul className="mt-5 divide-y divide-white/5">
+        {codes.map((c) => {
+          const st = status(c);
+          return (
+            <li key={c.id} className="flex flex-wrap items-center gap-3 py-3 text-sm">
+              <button
+                type="button"
+                title="Code kopieren"
+                onClick={() => navigator.clipboard?.writeText(c.code).then(() => onNotice({ ok: true, text: `Code ${c.code} kopiert.` }))}
+                className="rounded-lg bg-white/[0.06] px-3 py-1.5 font-mono text-sm font-semibold tracking-wider text-white hover:bg-white/10"
+              >
+                {c.code}
+              </button>
+              <span className="min-w-0 flex-1 text-slate-300">
+                {c.percent >= 100 ? `Kostenloser Zugang · ${c.months} ${c.months === 1 ? 'Monat' : 'Monate'}` : `${c.percent} % Rabatt`}
+                <span className="block text-xs text-slate-500">
+                  {c.used}
+                  {c.maxUses !== null ? ` / ${c.maxUses}` : ''} eingelöst
+                  {c.expiresAt ? ` · gültig bis ${formatDate(c.expiresAt)}` : ''}
+                  {c.note ? ` · ${c.note}` : ''}
+                </span>
+              </span>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${st.cls}`}>{st.text}</span>
+              <button type="button" onClick={() => act(() => api.post(`/admin/codes/${c.id}/active`, { active: !c.active }), c.active ? 'Code pausiert.' : 'Code aktiviert.')} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5">
+                {c.active ? 'Pausieren' : 'Aktivieren'}
+              </button>
+              <button type="button" aria-label={`Code ${c.code} löschen`} onClick={() => act(() => api.del(`/admin/codes/${c.id}`), 'Code gelöscht.')} className="grid h-8 w-8 place-items-center rounded-lg border border-rose-400/20 text-rose-300 hover:bg-rose-500/10">
+                <TrashIcon size={14} />
+              </button>
+            </li>
+          );
+        })}
+        {codes.length === 0 && <li className="py-4 text-sm text-slate-500">Noch keine Codes erstellt.</li>}
+      </ul>
     </section>
   );
 }

@@ -1,8 +1,8 @@
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
 import { useAuth } from '../auth/AuthContext';
-import { authApi } from '../auth/authService';
+import { authApi, rememberCode } from '../auth/authService';
 import { PROFILE } from '../data';
-import { ArrowLeft, CheckIcon, EyeIcon, EyeOffIcon, LockIcon, MailIcon, UserIcon } from '../icons';
+import { ArrowLeft, CheckIcon, EyeIcon, EyeOffIcon, GemIcon, LockIcon, MailIcon, UserIcon } from '../icons';
 import { errorText } from '../lib/api';
 import { navigate } from '../router';
 
@@ -137,11 +137,12 @@ const Info = ({ children }: { children: ReactNode }) => (
 /** Anmelden, Registrieren und Passwort vergessen. */
 export function LoginPage({ query }: { query?: URLSearchParams }) {
   const uid = useId();
-  const { login, register } = useAuth();
+  const { login, register, requestSubscription } = useAuth();
   const [mode, setMode] = useState<Mode>(query?.get('mode') === 'register' ? 'register' : 'login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [code, setCode] = useState(query?.get('code') ?? '');
   const [remember, setRemember] = useState(true);
   const [adult, setAdult] = useState(false);
   const [terms, setTerms] = useState(false);
@@ -181,7 +182,17 @@ export function LoginPage({ query }: { query?: URLSearchParams }) {
 
     setBusy(true);
     try {
-      if (mode === 'register') await register({ email: email.trim(), password, displayName: displayName.trim(), ageConfirmed: adult, termsAccepted: terms });
+      // Code vorab prüfen, damit Tippfehler sofort auffallen
+      const info = mode === 'register' && code.trim() ? await authApi.checkCode(code.trim()) : null;
+      if (info) rememberCode(info.code);
+      if (mode === 'register') {
+        await register({ email: email.trim(), password, displayName: displayName.trim(), ageConfirmed: adult, termsAccepted: terms });
+        // Zugangscode (100 %): sofort freischalten. Rabattcodes werden bei der Abo-Auswahl angewendet.
+        if (info?.free) {
+          await requestSubscription('monthly', info.code).catch(() => undefined);
+          rememberCode('');
+        }
+      }
       else await login(email.trim(), password, remember);
       // PortfolioApp leitet nach erfolgreicher Anmeldung automatisch weiter
     } catch (err) {
@@ -230,6 +241,10 @@ export function LoginPage({ query }: { query?: URLSearchParams }) {
               )
             }
           />
+        )}
+
+        {mode === 'register' && (
+          <TextField id={`${uid}-code`} label="Rabatt- oder Zugangscode (optional)" icon={<GemIcon size={17} />} autoComplete="off" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="z. B. WILLKOMMEN" maxLength={30} />
         )}
 
         {mode === 'login' && (

@@ -16,7 +16,7 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   refreshUser: () => Promise<User | null>;
   setUser: (user: User | null) => Promise<void>;
-  requestSubscription: (plan: PlanId) => Promise<User | null>;
+  requestSubscription: (plan: PlanId, code?: string) => Promise<User | null>;
   withdrawRequest: () => Promise<User | null>;
   cancelSubscription: () => Promise<User | null>;
   resumeSubscription: () => Promise<User | null>;
@@ -120,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       refreshUser: () => keep(authApi.me()),
       setUser: applyUser,
-      requestSubscription: (plan) => keep(authApi.requestSubscription(plan)),
+      requestSubscription: (plan, code) => keep(authApi.requestSubscription(plan, code)),
       withdrawRequest: () => keep(authApi.withdrawRequest()),
       cancelSubscription: () => keep(authApi.cancelSubscription()),
       resumeSubscription: () => keep(authApi.resumeSubscription()),

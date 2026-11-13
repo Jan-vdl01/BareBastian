@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
+import { adminCodes, codesRouter } from './codes';
 import { config, isProduction, mailEnabled } from './config';
 import { one, run } from './db';
 import { filesRouter } from './files';
@@ -106,6 +107,8 @@ export function createApp() {
   api.get('/health', (_req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
   api.use(authRouter);
   api.use(communityRouter);
+  api.use(codesRouter);
+  api.use('/admin/codes', adminCodes);
   api.use('/admin', adminRouter);
   api.use((_req, res) => res.status(404).json({ error: 'Unbekannte Adresse.' }));
   api.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

@@ -173,19 +173,75 @@ route('GET', '/account/export', function () {
 
 /* ---------- Abo ---------- */
 
+/* ---------- Rabattcodes ---------- */
+
+function normalize_code($v): string { return strtoupper(preg_replace('/\s+/', '', is_string($v) ? trim($v) : '')); }
+function discounted(float $price, int $percent): float { return round($price * (100 - $percent)) / 100; }
+
+/** Prüft einen Code für ein Mitglied; wirft eine verständliche Meldung, wenn er nicht gilt. */
+function valid_code($raw, ?string $userId = null): array {
+    $code = normalize_code($raw);
+    $row = $code !== '' ? one('SELECT * FROM discount_codes WHERE code = ?', [$code]) : null;
+    if (!$row || !$row['active']) throw bad('Dieser Code ist ungültig.');
+    if ($row['expires_at'] && $row['expires_at'] < now_iso()) throw bad('Dieser Code ist abgelaufen.');
+    $usedByMe = $userId ? (bool) val('SELECT 1 FROM code_redemptions WHERE code_id = ? AND user_id = ?', [$row['id'], $userId]) : false;
+    if ($usedByMe && $row['percent'] >= 100) throw bad('Du hast diesen Code bereits eingelöst.');
+    if (!$usedByMe && $row['max_uses'] !== null && $row['used'] >= $row['max_uses']) throw bad('Dieser Code wurde schon zu oft eingelöst.');
+    return $row;
+}
+function redeem_code(array $code, string $userId): void {
+    if (q('INSERT OR IGNORE INTO code_redemptions (code_id, user_id, at) VALUES (?, ?, ?)', [$code['id'], $userId, now_iso()])->rowCount()) q('UPDATE discount_codes SET used = used + 1 WHERE id = ?', [$code['id']]);
+}
+/** Zugang gewähren bzw. verlängern; liefert [ISO-Datum, DateTime]. */
+function grant_access(string $userId, string $planId, int $months): array {
+    $existing = one('SELECT * FROM subscriptions WHERE user_id = ?', [$userId]);
+    $base = new DateTime($existing && $existing['renews_at'] > now_iso() ? $existing['renews_at'] : 'now', new DateTimeZone('UTC'));
+    $base->modify("+$months months");
+    $end = $base->format('Y-m-d\TH:i:s') . '.000Z';
+    tx(function () use ($userId, $planId, $existing, $end) {
+        q('INSERT INTO subscriptions (user_id, plan, status, started_at, renews_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET plan = excluded.plan, status = excluded.status, renews_at = excluded.renews_at, updated_at = excluded.updated_at',
+            [$userId, $planId, 'active', $existing['started_at'] ?? now_iso(), $end, now_iso()]);
+        q("UPDATE sub_requests SET status = 'done' WHERE user_id = ? AND status = 'open'", [$userId]);
+    });
+    return [$end, $base];
+}
+function euro(float $n): string { return number_format($n, 2, ',', '.') . ' €'; }
+
+route('POST', '/codes/check', function () {
+    rate_limit('codes', 20, 900);
+    $c = valid_code(body()['code'] ?? '', current_user()['id'] ?? null);
+    rate_ok('codes');
+    $prices = new stdClass();
+    foreach (plans() as $id => $p) $prices->$id = discounted((float) $p['price'], (int) $c['percent']);
+    send_json(['code' => $c['code'], 'percent' => (int) $c['percent'], 'free' => $c['percent'] >= 100, 'months' => $c['months'] === null ? null : (int) $c['months'], 'prices' => $prices]);
+});
+
 route('POST', '/subscription/request', function () {
     $u = require_login();
-    $planId = str(body()['plan'] ?? '');
+    $b = body();
+    $planId = str($b['plan'] ?? '');
     if (!isset(plans()[$planId])) throw bad('Bitte wähle ein Paket.');
     $p = plan($planId);
-    q("UPDATE sub_requests SET status = 'replaced' WHERE user_id = ? AND status = 'open'", [$u['id']]);
-    q('INSERT INTO sub_requests (id, user_id, plan, status, created_at) VALUES (?, ?, ?, ?, ?)', [new_id('r'), $u['id'], $planId, 'open', now_iso()]);
+    $code = !empty($b['code']) ? valid_code($b['code'], $u['id']) : null;
     $name = get_profile($u['id'])->displayName ?? $u['email'];
-    $price = number_format($p['price'], 2, ',', '.');
     $c = config();
-    notify_admin('Neue Abo-Anfrage', ["$name ({$u['email']}) möchte das Paket „{$p['name']}“ ($price €).", 'Nach Zahlungseingang in der Verwaltung unter „Mitglieder & Abos“ freischalten.'], $u['email']);
+
+    // Code mit 100 %: Zugang sofort freischalten – keine Zahlung, keine Freigabe nötig
+    if ($code && $code['percent'] >= 100) {
+        [, $end] = grant_access($u['id'], $planId, (int) ($code['months'] ?? $p['months']));
+        redeem_code($code, $u['id']);
+        notify_admin('Code eingelöst', ["$name ({$u['email']}) hat den Code „{$code['code']}“ eingelöst und hat bis " . $end->format('d.m.Y') . ' kostenlosen Zugang.']);
+        send_json(['user' => client_user($u), 'granted' => true]);
+    }
+
+    $price = $code ? discounted((float) $p['price'], (int) $code['percent']) : (float) $p['price'];
+    q("UPDATE sub_requests SET status = 'replaced' WHERE user_id = ? AND status = 'open'", [$u['id']]);
+    q('INSERT INTO sub_requests (id, user_id, plan, status, created_at, code, percent, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [new_id('r'), $u['id'], $planId, 'open', now_iso(), $code['code'] ?? null, $code['percent'] ?? null, $price]);
+    if ($code) redeem_code($code, $u['id']);
+    $priceLine = $code ? euro($price) . ' statt ' . euro((float) $p['price']) . " (Code {$code['code']}, −{$code['percent']} %)" : euro($price);
+    notify_admin('Neue Abo-Anfrage', ["$name ({$u['email']}) möchte das Paket „{$p['name']}“: $priceLine.", 'Nach Zahlungseingang in der Verwaltung unter „Mitglieder & Abos“ freischalten.'], $u['email']);
     $link = $c['payment_links'][$planId] ?? '';
-    send_mail($u['email'], 'Deine Abo-Anfrage – ' . $c['site_name'], 'Danke für deine Abo-Anfrage!', ["Paket: {$p['name']} – $price €", $c['payment_info']], $link ? ['Jetzt bezahlen', $link] : null);
+    send_mail($u['email'], 'Deine Abo-Anfrage – ' . $c['site_name'], 'Danke für deine Abo-Anfrage!', ["Paket: {$p['name']} – $priceLine", $c['payment_info']], $link ? ['Jetzt bezahlen', $link] : null);
     send_json(['user' => client_user($u)]);
 });
 
@@ -583,7 +639,7 @@ route('GET', '/admin/users', function () {
             'id' => $x['id'], 'email' => $x['email'], 'displayName' => $p->displayName ?? '–', 'username' => $p->username ?? '', 'role' => $x['role'],
             'createdAt' => $x['created_at'], 'lastLoginAt' => $x['last_login_at'], 'emailVerified' => (bool) $x['email_verified'], 'disabled' => (bool) $x['disabled'],
             'subscription' => $s ? ['plan' => $s['plan'], 'status' => $s['status'], 'startedAt' => $s['started_at'], 'renewsAt' => $s['renews_at']] : null,
-            'request' => $r ? ['id' => $r['id'], 'plan' => $r['plan'], 'createdAt' => $r['created_at']] : null,
+            'request' => $r ? ['id' => $r['id'], 'plan' => $r['plan'], 'createdAt' => $r['created_at'], 'code' => $r['code'], 'percent' => $r['percent'] === null ? null : (int) $r['percent'], 'price' => $r['price'] === null ? null : (float) $r['price']] : null,
         ];
         if (!empty($p->avatar)) $row['avatar'] = $p->avatar;
         $out[] = $row;
@@ -651,6 +707,50 @@ route('GET', '/admin/stats', function () {
         'messages' => (int) val('SELECT COUNT(*) FROM messages'),
         'storageMb' => round(((int) val('SELECT COALESCE(SUM(size), 0) FROM files')) / 1048576, 1),
     ]);
+});
+
+/* ---------- Rabattcodes verwalten ---------- */
+
+function client_code(array $c): array {
+    return ['id' => $c['id'], 'code' => $c['code'], 'percent' => (int) $c['percent'], 'months' => $c['months'] === null ? null : (int) $c['months'], 'maxUses' => $c['max_uses'] === null ? null : (int) $c['max_uses'],
+        'used' => (int) $c['used'], 'expiresAt' => $c['expires_at'], 'active' => (bool) $c['active'], 'note' => $c['note'], 'createdAt' => $c['created_at']];
+}
+route('GET', '/admin/codes', function () { require_admin(); send_json(array_map('client_code', all('SELECT * FROM discount_codes ORDER BY created_at DESC'))); });
+route('POST', '/admin/codes', function () {
+    require_admin();
+    $b = body();
+    $code = normalize_code($b['code'] ?? '');
+    if (!preg_match('/^[A-Z0-9_-]{3,30}$/', $code)) throw bad('Der Code braucht 3–30 Zeichen: Buchstaben, Zahlen, Bindestrich oder Unterstrich.');
+    $percent = is_numeric($b['percent'] ?? null) ? (int) round($b['percent']) : 0;
+    if ($percent < 1 || $percent > 100) throw bad('Der Rabatt muss zwischen 1 und 100 % liegen.');
+    $months = null;
+    if ($percent >= 100) {
+        $months = is_numeric($b['months'] ?? null) ? (int) round($b['months']) : 0;
+        if ($months < 1 || $months > 120) throw bad('Bitte die Laufzeit des kostenlosen Zugangs angeben (1–120 Monate).');
+    }
+    $max = $b['maxUses'] ?? null;
+    $maxUses = ($max === null || $max === '') ? null : (is_numeric($max) ? (int) round($max) : 0);
+    if ($maxUses !== null && $maxUses < 1) throw bad('Die Anzahl der Einlösungen muss mindestens 1 sein.');
+    $expires = null;
+    if (!empty($b['expiresAt'])) {
+        $ts = strtotime((string) $b['expiresAt']);
+        if ($ts === false) throw bad('Das Ablaufdatum ist ungültig.');
+        $expires = now_iso($ts);
+    }
+    if (val('SELECT 1 FROM discount_codes WHERE code = ?', [$code])) throw new HttpError(409, 'Diesen Code gibt es schon.');
+    $id = new_id('dc');
+    q('INSERT INTO discount_codes (id, code, percent, months, max_uses, used, expires_at, active, note, created_at) VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?, ?)', [$id, $code, $percent, $months, $maxUses, $expires, str($b['note'] ?? '', 200), now_iso()]);
+    send_json(client_code(one('SELECT * FROM discount_codes WHERE id = ?', [$id])), 201);
+});
+route('POST', '/admin/codes/([\w-]+)/active', function ($id) {
+    require_admin();
+    if (!q('UPDATE discount_codes SET active = ? WHERE id = ?', [(body()['active'] ?? true) === false ? 0 : 1, $id])->rowCount()) throw not_found('Code nicht gefunden.');
+    send_json(['ok' => true]);
+});
+route('DELETE', '/admin/codes/([\w-]+)', function ($id) {
+    require_admin();
+    if (!q('DELETE FROM discount_codes WHERE id = ?', [$id])->rowCount()) throw not_found('Code nicht gefunden.');
+    send_json(['ok' => true]);
 });
 
 /** Einstellungen der Website (Zahlungstext, Bezahl-Links, E-Mail-Adressen) – in der Verwaltung änderbar. */

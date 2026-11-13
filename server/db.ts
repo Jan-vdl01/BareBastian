@@ -154,6 +154,35 @@ db.exec(`
   );
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS discount_codes (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    percent INTEGER NOT NULL,
+    months INTEGER,
+    max_uses INTEGER,
+    used INTEGER NOT NULL DEFAULT 0,
+    expires_at TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS code_redemptions (
+    code_id TEXT NOT NULL REFERENCES discount_codes(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    at TEXT NOT NULL,
+    PRIMARY KEY (code_id, user_id)
+  );
+`);
+// Nachträglich ergänzte Spalten (ältere Datenbanken)
+for (const col of ['code TEXT', 'percent INTEGER', 'price REAL']) {
+  try {
+    db.exec(`ALTER TABLE sub_requests ADD COLUMN ${col}`);
+  } catch {
+    /* Spalte existiert bereits */
+  }
+}
+
 export const now = () => new Date().toISOString();
 
 /** Führt mehrere Anweisungen atomar aus. */

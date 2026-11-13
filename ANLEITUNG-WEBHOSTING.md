@@ -54,6 +54,15 @@ Falls die Seite einen Hinweis zeigt (z. B. „pdo_sqlite ist nicht aktiv“): In
 3. Nach Zahlungseingang klickst du in **Verwaltung → Mitglieder & Abos** auf **„Abo freischalten“**.
 4. Das Abo endet automatisch nach der Laufzeit, es gibt keine automatische Verlängerung.
 
+## Rabatt- und Zugangscodes
+
+In **Verwaltung → Rabatt- & Zugangscodes** erstellst du Codes:
+
+- **Rabatt in %:** Der Code senkt den Preis. Das Mitglied sieht den reduzierten Preis, du siehst Code und Preis in der Abo-Anfrage.
+- **Kostenloser Zugang:** Der Code schaltet das Abo sofort für die eingestellte Zahl von Monaten frei, ohne Zahlung und ohne Freigabe. Gut für Testkonten oder Geschenke.
+
+Optional begrenzt du die Zahl der Einlösungen und setzt ein Ablaufdatum. Mitglieder geben den Code bei der Registrierung oder bei der Abo-Auswahl ein. Jedes Mitglied kann einen Code nur einmal einlösen. Codes lassen sich pausieren und löschen.
+
 ## 6. Wo liegen die Daten?
 
 Alle Daten liegen im Ordner **`barebastian-data`**, eine Ebene **über** `public_html` (im Dateimanager: einmal „nach oben“). Dort ist er aus dem Internet nicht erreichbar.

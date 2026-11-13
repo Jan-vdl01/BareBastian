@@ -22,10 +22,10 @@ export const PROFILE = {
 };
 
 export const NAV_ITEMS: NavItem[] = [
-  { label: 'Links', href: '#links' },
+  { label: 'Funktionen', href: '#funktionen' },
   { label: 'Preise', href: '#/preise' },
   { label: 'FAQ', href: '#faq' },
-  { label: 'Verbinden', href: '#footer' },
+  { label: 'Kanäle', href: '#links' },
 ];
 
 export const LINK_GROUPS: LinkGroup[] = [
@@ -86,39 +86,45 @@ export const SOCIAL_ICONS = LINK_GROUPS[0].links;
 
 export const FAQ_ITEMS: FaqItem[] = [
   {
+    id: 'what',
+    question: 'Was bekomme ich mit dem Abo?',
+    answer:
+      'Zugang zum kompletten Abo-Bereich: den Chaturbate-Bio-Designer mit allen Themes, das Finanz-Tool, den Social Hub mit Direktnachrichten und die Bibliothek mit exklusiven Videos, Fotos und Posts.',
+  },
+  {
+    id: 'bio',
+    question: 'Funktioniert die Bio wirklich auf Chaturbate?',
+    answer:
+      'Ja. Chaturbate erlaubt nur wenige HTML-Befehle. Der Designer verwendet ausschließlich diese, prüft dein Ergebnis automatisch und gibt es als Einzeiler aus, den du direkt in dein Profil einfügst.',
+  },
+  {
+    id: 'skills',
+    question: 'Brauche ich Vorkenntnisse?',
+    answer:
+      'Nein. Du wählst ein Theme, fügst Module wie Tip-Menü oder Zeitplan hinzu und trägst deine Texte ein. Alles andere erledigt das Tool.',
+  },
+  {
+    id: 'renew',
+    question: 'Verlängert sich das Abo automatisch?',
+    answer:
+      'Nein. Das Abo läuft genau für die gebuchte Zeit und endet dann von selbst. Wenn du weitermachen möchtest, verlängerst du einfach.',
+  },
+  {
+    id: 'code',
+    question: 'Ich habe einen Rabatt- oder Zugangscode. Wo gebe ich ihn ein?',
+    answer:
+      'Bei der Registrierung oder später bei der Auswahl deines Pakets. Rabattcodes senken den Preis, Zugangscodes schalten den Abo-Bereich sofort frei.',
+  },
+  {
+    id: 'data',
+    question: 'Was passiert mit meinen Daten?',
+    answer:
+      'Deine Daten liegen auf unserem eigenen Server und sind nur für dich sichtbar. Finanzdaten und Bio-Profile kannst du jederzeit exportieren, dein Konto jederzeit löschen.',
+  },
+  {
     id: 'contact',
-    question: 'Wie erreiche ich dich am schnellsten?',
+    question: 'Wie erreiche ich dich?',
     answer:
-      'Über das Kontaktformular im Info-Drawer oder direkt per E-Mail. Für Abonnenten sind Direktnachrichten auf den VIP-Plattformen der schnellste Weg.',
-  },
-  {
-    id: 'exclusive',
-    question: 'Wo finde ich exklusive Inhalte?',
-    answer:
-      'Exklusive Inhalte gibt es auf den Plattformen unter „VIP & Abos“. Einzelne Videos ohne Abo findest du im Store.',
-  },
-  {
-    id: 'live',
-    question: 'Wann bist du live?',
-    answer:
-      'Live-Termine kündige ich vorab auf X und Telegram an. Folge mir dort, um keinen Stream zu verpassen.',
-  },
-  {
-    id: 'collab',
-    question: 'Sind Kooperationen möglich?',
-    answer:
-      'Ja – schreib mir über das Kontaktformular mit dem Betreff „Kooperation“ und ein paar Details zu deiner Idee.',
-  },
-  {
-    id: 'support',
-    question: 'Wie kann ich dich unterstützen?',
-    answer:
-      'Über ein Abo, einen Kauf im Store, ein Geschenk von der Throne-Wishlist oder ein Trinkgeld via PayPal. Jede Unterstützung hilft enorm!',
-  },
-  {
-    id: 'privacy',
-    question: 'Wie wird meine Privatsphäre geschützt?',
-    answer:
-      'Alle Plattformen wickeln Zahlungen diskret ab. Bei Geschenken über Throne bleiben Adressen auf beiden Seiten privat.',
+      'Über das Kontaktformular unten rechts oder – als Mitglied – direkt per Nachricht im Abo-Bereich.',
   },
 ];

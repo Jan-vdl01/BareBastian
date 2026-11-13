@@ -26,7 +26,7 @@ export interface User {
   emailVerified: boolean;
   subscription: Subscription | null;
   /** Offene Abo-Anfrage (wartet auf Zahlung/Freischaltung) */
-  pendingRequest: { plan: PlanId; createdAt: string } | null;
+  pendingRequest: { plan: PlanId; createdAt: string; code?: string | null; percent?: number | null; price?: number | null } | null;
 }
 
 export interface RegisterInput {
@@ -42,6 +42,33 @@ export interface PublicConfig {
   mailEnabled: boolean;
   payment: { info: string; links: Partial<Record<PlanId, string>> };
 }
+
+/** Ergebnis der Code-Prüfung: Rabatt in Prozent bzw. kostenloser Zugang für `months` Monate. */
+export interface CodeInfo {
+  code: string;
+  percent: number;
+  free: boolean;
+  months: number | null;
+  prices: Record<PlanId, number>;
+}
+
+/** Ein bei der Registrierung eingegebener Code wird bis zur Abo-Auswahl gemerkt. */
+const CODE_KEY = 'bb_code';
+export const rememberCode = (code: string) => {
+  try {
+    if (code.trim()) sessionStorage.setItem(CODE_KEY, code.trim().toUpperCase());
+    else sessionStorage.removeItem(CODE_KEY);
+  } catch {
+    /* Speicher nicht verfügbar */
+  }
+};
+export const rememberedCode = () => {
+  try {
+    return sessionStorage.getItem(CODE_KEY) ?? '';
+  } catch {
+    return '';
+  }
+};
 
 export const isAdmin = (user: User | null) => user?.role === 'admin';
 
@@ -72,7 +99,8 @@ export const authApi = {
   resendVerification: () => api.post('/auth/resend-verification'),
   changePassword: (current: string, next: string) => api.post('/account/password', { current, next }),
   deleteAccount: (password: string) => api.del('/account', { password }),
-  requestSubscription: (plan: PlanId) => api.post<UserResponse>('/subscription/request', { plan }).then(userOf),
+  requestSubscription: (plan: PlanId, code?: string) => api.post<UserResponse>('/subscription/request', { plan, code: code || undefined }).then(userOf),
+  checkCode: (code: string) => api.post<CodeInfo>('/codes/check', { code }),
   withdrawRequest: () => api.del<UserResponse>('/subscription/request').then(userOf),
   cancelSubscription: () => api.post<UserResponse>('/subscription/cancel').then(userOf),
   resumeSubscription: () => api.post<UserResponse>('/subscription/resume').then(userOf),

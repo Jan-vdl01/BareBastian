@@ -215,7 +215,7 @@ export function consumeToken(token: string, kind: 'reset' | 'verify'): string | 
 
 export function clientUser(user: UserRow) {
   const sub = getSubscription(user.id);
-  const request = one<{ plan: string; created_at: string }>("SELECT plan, created_at FROM sub_requests WHERE user_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1", user.id);
+  const request = one<{ plan: string; created_at: string; code: string | null; percent: number | null; price: number | null }>("SELECT plan, created_at, code, percent, price FROM sub_requests WHERE user_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1", user.id);
   const profile = getProfile(user.id);
   return {
     id: user.id,
@@ -226,7 +226,7 @@ export function clientUser(user: UserRow) {
     role: user.role,
     emailVerified: !!user.email_verified,
     subscription: sub ? { plan: sub.plan, status: sub.status, startedAt: sub.started_at, renewsAt: sub.renews_at } : null,
-    pendingRequest: request ? { plan: request.plan, createdAt: request.created_at } : null,
+    pendingRequest: request ? { plan: request.plan, createdAt: request.created_at, code: request.code, percent: request.percent, price: request.price } : null,
   };
 }
 

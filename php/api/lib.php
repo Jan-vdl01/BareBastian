@@ -102,6 +102,14 @@ function db(): PDO {
         $pdo->exec(SCHEMA);
         $pdo->exec('PRAGMA user_version = 1');
     }
+    if ((int) $pdo->query('PRAGMA user_version')->fetchColumn() < 2) {
+        // Rabattcodes (Version 2)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS discount_codes (id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE COLLATE NOCASE, percent INTEGER NOT NULL, months INTEGER, max_uses INTEGER, used INTEGER NOT NULL DEFAULT 0, expires_at TEXT, active INTEGER NOT NULL DEFAULT 1, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)");
+        $pdo->exec('CREATE TABLE IF NOT EXISTS code_redemptions (code_id TEXT NOT NULL REFERENCES discount_codes(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, at TEXT NOT NULL, PRIMARY KEY (code_id, user_id))');
+        $cols = array_column($pdo->query('PRAGMA table_info(sub_requests)')->fetchAll(), 'name');
+        foreach (['code' => 'TEXT', 'percent' => 'INTEGER', 'price' => 'REAL'] as $col => $type) if (!in_array($col, $cols, true)) $pdo->exec("ALTER TABLE sub_requests ADD COLUMN $col $type");
+        $pdo->exec('PRAGMA user_version = 2');
+    }
     return $pdo;
 }
 
@@ -292,13 +300,13 @@ function get_profile(string $id): ?object { $r = one(PROFILE_SQL . ' WHERE p.use
 
 function client_user(array $u): array {
     $sub = one('SELECT * FROM subscriptions WHERE user_id = ?', [$u['id']]);
-    $req = one("SELECT plan, created_at FROM sub_requests WHERE user_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1", [$u['id']]);
+    $req = one("SELECT plan, created_at, code, percent, price FROM sub_requests WHERE user_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1", [$u['id']]);
     $p = get_profile($u['id']);
     return [
         'id' => $u['id'], 'email' => $u['email'], 'displayName' => $p->displayName ?? 'Mitglied', 'createdAt' => $u['created_at'],
         'provider' => 'password', 'role' => $u['role'], 'emailVerified' => (bool) $u['email_verified'],
         'subscription' => $sub ? ['plan' => $sub['plan'], 'status' => $sub['status'], 'startedAt' => $sub['started_at'], 'renewsAt' => $sub['renews_at']] : null,
-        'pendingRequest' => $req ? ['plan' => $req['plan'], 'createdAt' => $req['created_at']] : null,
+        'pendingRequest' => $req ? ['plan' => $req['plan'], 'createdAt' => $req['created_at'], 'code' => $req['code'], 'percent' => $req['percent'] === null ? null : (int) $req['percent'], 'price' => $req['price'] === null ? null : (float) $req['price']] : null,
     ];
 }
 

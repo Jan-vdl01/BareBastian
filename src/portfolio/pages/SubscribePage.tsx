@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
-import { authApi, type PublicConfig } from '../auth/authService';
+import { authApi, rememberCode, rememberedCode, type CodeInfo, type PublicConfig } from '../auth/authService';
 import { formatEuro, getPlan, PLAN_FEATURES, PLANS, type PlanId } from '../config/plans';
 import { PROFILE } from '../data';
-import { ArrowLeft, CheckIcon, ClockIcon, CrownIcon, ExternalLink, LockIcon, LogoutIcon } from '../icons';
+import { ArrowLeft, CheckIcon, ClockIcon, CrownIcon, ExternalLink, GemIcon, LockIcon, LogoutIcon } from '../icons';
 import { errorText } from '../lib/api';
 import { navigate } from '../router';
 import { formatDate } from '../dashboard/libraryData';
@@ -17,6 +17,40 @@ export function SubscribePage({ query }: { query: URLSearchParams }) {
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [config, setConfig] = useState<PublicConfig | null>(null);
+  const [codeInput, setCodeInput] = useState(() => query.get('code') ?? rememberedCode());
+  const [code, setCode] = useState<CodeInfo | null>(null);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeBusy, setCodeBusy] = useState(false);
+
+  const applyCode = async (value = codeInput) => {
+    if (!value.trim()) {
+      setCode(null);
+      setCodeError(null);
+      rememberCode('');
+      return;
+    }
+    setCodeBusy(true);
+    setCodeError(null);
+    try {
+      const info = await authApi.checkCode(value);
+      setCode(info);
+      setCodeInput(info.code);
+      rememberCode(info.code);
+    } catch (err) {
+      setCode(null);
+      setCodeError(errorText(err));
+    } finally {
+      setCodeBusy(false);
+    }
+  };
+
+  // Gemerkten Code (z. B. aus der Registrierung) automatisch anwenden
+  useEffect(() => {
+    if (codeInput.trim()) applyCode(codeInput);
+    // nur beim ersten Anzeigen
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const priceOf = (planId: PlanId) => code?.prices[planId] ?? getPlan(planId).price;
   const pending = user?.pendingRequest;
   const expired = user?.subscription && new Date(user.subscription.renewsAt) <= new Date();
 
@@ -32,11 +66,14 @@ export function SubscribePage({ query }: { query: URLSearchParams }) {
   }, [pending, refreshUser]);
 
   const handleRequest = async () => {
-    if (!consent) return setError('Bitte bestätige den Hinweis zum Widerrufsrecht.');
+    if (!code?.free && !consent) return setError('Bitte bestätige den Hinweis zum Widerrufsrecht.');
     setBusy(true);
     setError(null);
     try {
-      await requestSubscription(selected);
+      const updated = await requestSubscription(selected, code?.code);
+      rememberCode('');
+      // Kostenloser Zugang ist sofort aktiv
+      if (updated?.subscription && new Date(updated.subscription.renewsAt) > new Date()) return navigate('/abo-bereich');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       setError(errorText(err));
@@ -87,7 +124,8 @@ export function SubscribePage({ query }: { query: URLSearchParams }) {
               <div>
                 <p className="font-oswald text-xl tracking-wide text-white">Anfrage gesendet</p>
                 <p className="text-sm text-slate-400">
-                  {getPlan(pending.plan).name} · {formatEuro(getPlan(pending.plan).price)} · am {formatDate(pending.createdAt)}
+                  {getPlan(pending.plan).name} · {formatEuro(pending.price ?? getPlan(pending.plan).price)}
+                  {pending.code ? ` (Code ${pending.code}, −${pending.percent} %)` : ''} · am {formatDate(pending.createdAt)}
                 </p>
               </div>
             </div>
@@ -140,9 +178,20 @@ export function SubscribePage({ query }: { query: URLSearchParams }) {
                     {active && <CheckIcon size={14} strokeWidth={3} />}
                   </span>
                 </div>
-                <p className="mt-5 text-4xl font-semibold text-white">{formatEuro(plan.price)}</p>
+                {code ? (
+                  <p className="mt-5 flex flex-wrap items-baseline gap-2">
+                    <span className="text-4xl font-semibold text-white">{code.free ? 'Kostenlos' : formatEuro(priceOf(plan.id))}</span>
+                    <span className="text-lg text-slate-500 line-through">{formatEuro(plan.price)}</span>
+                  </p>
+                ) : (
+                  <p className="mt-5 text-4xl font-semibold text-white">{formatEuro(plan.price)}</p>
+                )}
                 <p className="mt-1 text-sm text-slate-400">
-                  {plan.months === 1 ? 'pro Monat' : `für ${plan.months} Monate · ${formatEuro(perMonth)}/Monat`}
+                  {code?.free
+                    ? `für ${code.months ?? plan.months} ${(code.months ?? plan.months) === 1 ? 'Monat' : 'Monate'}`
+                    : plan.months === 1
+                      ? 'pro Monat'
+                      : `für ${plan.months} Monate · ${formatEuro(priceOf(plan.id) / plan.months)}/Monat`}
                 </p>
               </button>
             );
@@ -161,12 +210,57 @@ export function SubscribePage({ query }: { query: URLSearchParams }) {
             ))}
           </ul>
 
+          {/* Rabatt- oder Zugangscode */}
+          <div className="mt-6 border-t border-white/10 pt-5">
+            <label htmlFor="abo-code" className="mb-1.5 flex items-center gap-2 text-xs font-medium text-slate-300">
+              <GemIcon size={14} /> Rabatt- oder Zugangscode
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="abo-code"
+                value={codeInput}
+                onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), applyCode())}
+                placeholder="Code eingeben"
+                maxLength={30}
+                autoComplete="off"
+                className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm uppercase tracking-wider text-white placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-500 focus:border-cyan-400/60 focus:outline-none focus:ring-4 focus:ring-cyan-400/10"
+              />
+              <button type="button" onClick={() => applyCode()} disabled={codeBusy} className="rounded-xl border border-white/15 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/10 disabled:opacity-60">
+                {codeBusy ? 'Prüfe …' : 'Einlösen'}
+              </button>
+            </div>
+            {codeError && (
+              <p role="alert" className="mt-2 text-sm text-rose-300">
+                {codeError}
+              </p>
+            )}
+            {code && (
+              <p role="status" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-emerald-300">
+                <CheckIcon size={15} />
+                {code.free ? `Code ${code.code}: kostenloser Zugang für ${code.months} ${code.months === 1 ? 'Monat' : 'Monate'}` : `Code ${code.code}: ${code.percent} % Rabatt`}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCodeInput('');
+                    applyCode('');
+                  }}
+                  className="text-xs text-slate-400 underline underline-offset-4 hover:text-white"
+                >
+                  entfernen
+                </button>
+              </p>
+            )}
+          </div>
+
           {user ? (
             <>
+              {!code?.free && (
               <label className="mt-6 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-slate-400">
                 <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-cyan-400" />
                 Ich stimme ausdrücklich zu, dass der Zugang zu den digitalen Inhalten vor Ablauf der Widerrufsfrist freigeschaltet wird. Mir ist bekannt, dass ich dadurch mein Widerrufsrecht verliere.
               </label>
+              )}
               {error && (
                 <p role="alert" className="mt-4 rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-sm text-rose-200">
                   {error}
@@ -179,13 +273,15 @@ export function SubscribePage({ query }: { query: URLSearchParams }) {
                 className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/40 active:scale-[0.98] disabled:cursor-wait disabled:opacity-70"
               >
                 {busy ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <CrownIcon size={18} />}
-                {busy ? 'Wird gesendet …' : `Abo anfragen – ${formatEuro(getPlan(selected).price)}`}
+                {busy ? 'Wird gesendet …' : code?.free ? 'Kostenlos freischalten' : `Abo anfragen – ${formatEuro(priceOf(selected))}`}
               </button>
-              <p className="mt-3 text-center text-xs text-slate-500">Keine automatische Verlängerung. Die Zahlungsinformationen bekommst du nach der Anfrage.</p>
+              <p className="mt-3 text-center text-xs text-slate-500">
+                {code?.free ? 'Dein Zugang wird sofort aktiviert – ohne Zahlung und ohne automatische Verlängerung.' : 'Keine automatische Verlängerung. Die Zahlungsinformationen bekommst du nach der Anfrage.'}
+              </p>
             </>
           ) : (
             <a
-              href={`#/login?mode=register&next=${encodeURIComponent(`/abo?plan=${selected}`)}`}
+              href={`#/login?mode=register${code ? `&code=${encodeURIComponent(code.code)}` : ''}&next=${encodeURIComponent(`/abo?plan=${selected}`)}`}
               className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 px-5 py-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/30"
             >
               <LockIcon size={16} /> Konto erstellen oder anmelden
