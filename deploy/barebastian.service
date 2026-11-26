@@ -1,0 +1,23 @@
+[Unit]
+Description=BAREBASTIAN Website
+After=network.target
+
+[Service]
+Type=simple
+User=barebastian
+Group=barebastian
+WorkingDirectory=/opt/barebastian/app
+# Einstellungen liest der Server selbst aus /opt/barebastian/.env
+ExecStart=/usr/bin/node --no-warnings=ExperimentalWarning /opt/barebastian/app/server.cjs
+Restart=always
+RestartSec=3
+# Absicherung
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/barebastian/data
+ReadOnlyPaths=/opt/barebastian/app /opt/barebastian/.env
+
+[Install]
+WantedBy=multi-user.target

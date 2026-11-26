@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+standalone/
+dist-standalone-tmp/
+BareBastian-WebApp.zip
+dist-server/
+data/
+release/
+release-php/
